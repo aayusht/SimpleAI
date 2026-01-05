@@ -19,3 +19,15 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Prevent LiteRT-LM internal JNI classes from being renamed
+-keep class com.google.ai.edge.litertlm.** { *; }
+
+# Keep all classes and methods that use the Tool annotations
+-keepclassmembers class * {
+    @com.google.ai.edge.litertlm.Tool <methods>;
+    @com.google.ai.edge.litertlm.ToolParam <fields>;
+}
+
+# Keep the callback interface used by nativeSendMessageAsync
+-keep interface com.google.ai.edge.litertlm.MessageCallback { *; }
