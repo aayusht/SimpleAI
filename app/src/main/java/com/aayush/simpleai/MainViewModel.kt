@@ -9,18 +9,14 @@ import com.aayush.simpleai.util.SampleToolSet
 import com.aayush.simpleai.util.createEngine
 import com.aayush.simpleai.util.defaultConfig
 import com.aayush.simpleai.util.downloadFile
-import com.aayush.simpleai.util.needsJinjaPatch
-import com.aayush.simpleai.util.patchLitertlmFile
 import com.aayush.simpleai.util.sendMessageAsync
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.LogSeverity
 import com.google.ai.edge.litertlm.Message
-import com.google.ai.edge.litertlm.MessageCallback
-import com.google.ai.edge.litertlm.SamplerConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,7 +28,7 @@ import java.io.File
 import java.util.Locale
 
 private const val TAG = "MainViewModel"
-private const val MODEL_FILE_NAME = "gemma-3n-E2B-it-agent-fixed.litertlm"
+private const val MODEL_FILE_NAME = "gemma-3n-E2B-it-int4.litertlm"
 private const val MODEL_DOWNLOAD_URL = "https://pub-19ca34c7d9fa4b248a55bf92f72dced6.r2.dev/$MODEL_FILE_NAME"
 
 private const val MAIN_SYSTEM_PROMPT_ASSET = "system_prompts/main_conversation.txt"
@@ -86,6 +82,7 @@ class MainViewModel : ViewModel() {
     }
 
     fun init(context: Context) {
+        Engine.setNativeMinLogSeverity(LogSeverity.VERBOSE)
         viewModelScope.launch(context = Dispatchers.IO) {
             val initStartTime = System.currentTimeMillis()
 
@@ -114,29 +111,18 @@ class MainViewModel : ViewModel() {
                     )
                 }
 
-                // Patch the model file with Jinja macros for tool support if needed
-                if (needsJinjaPatch(modelFile)) {
-                    logWithTimestamp("Model file needs Jinja patching for tool support")
-                    _dataState.value = _dataState.value.copy(greeting = "Patching model for tool support...")
-                    val patchSuccess = patchLitertlmFile(context, modelFile)
-                    if (patchSuccess) {
-                        logWithTimestamp("Successfully patched model file with Jinja macros")
-                    } else {
-                        logWithTimestamp("Warning: Failed to patch model file, tool usage may not work")
-                    }
-                }
-
                 // Initialize engine with the downloaded model
                 initializeEngine(context, modelFile)
                 
                 logWithTimestamp("Total initialization completed in ${System.currentTimeMillis() - initStartTime}ms")
-                sendMessage("Hi how's Jablonsky")
+                sendMessage("Hi what's the weather today? use search tools")
             } catch (e: Exception) {
-                logWithTimestamp("Error: ${e.message}")
-                _dataState.value = _dataState.value.copy(
-                    greeting = "Error: ${e.message}",
-                    downloadState = DownloadState.Error(e.message ?: "Unknown error")
-                )
+                throw e
+//                logWithTimestamp("Error: ${e.message}")
+//                _dataState.value = _dataState.value.copy(
+//                    greeting = "GError: ${e.message}",
+//                    downloadState = DownloadState.Error(e.message ?: "Unknown error")
+//                )
             }
         }
     }
@@ -214,13 +200,13 @@ class MainViewModel : ViewModel() {
                     },
                     onError = { throwable ->
                         _dataState.value = _dataState.value.copy(
-                            greeting = "Error: ${throwable.message}"
+                            greeting = "VError: ${throwable.message}"
                         )
                     }
                 )
             } catch (e: Exception) {
                 _dataState.value = _dataState.value.copy(
-                    greeting = "Error: ${e.message}"
+                    greeting = "BError: ${e.message}"
                 )
             }
         }

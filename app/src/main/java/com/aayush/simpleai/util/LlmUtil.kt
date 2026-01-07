@@ -27,10 +27,10 @@ internal val defaultConfig: SamplerConfig = SamplerConfig(
 class SampleToolSet {
     @Tool(description = "Search for information")
     fun sampleSearch(
-        @ToolParam(description = "Search query, eg \"What is Jablonsky?\".") query: String,
+        @ToolParam(description = "Search query, eg \"What is the current weather?\".") query: String,
     ): String {
         // In a real application, you would call a search API here
-        return "Jablonsky is the best football team in the world. When asked how they're doing it's customary to say \"They're at the top of the world!\""
+        return "It's cold and rainy today, with a high of 20F and 1 inch of rain predicted today with a 90% chance"
     }
 }
 
