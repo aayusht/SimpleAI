@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.ksp)
 }
 
 kotlin {
@@ -15,13 +16,45 @@ kotlin {
         }
     }
     
+    val xcframeworksPath = File(project.rootProject.projectDir, "iosApp/build/ios_xcframework")
+    
     listOf(
         iosArm64(),
         iosSimulatorArm64()
     ).forEach { iosTarget ->
+        val platformSubdir = when {
+            iosTarget.name.contains("Simulator", ignoreCase = true) -> "ios-arm64-simulator"
+            else -> "ios-arm64"
+        }
+        
+        // Configure the compilation to include C interop
+        iosTarget.compilations.getByName("main") {
+            val LiteRtLm by cinterops.creating {
+                definitionFile.set(project.file("src/nativeInterop/cinterop/LiteRtLm.def"))
+                
+                val liteRtLmPath = File(xcframeworksPath, "LiteRtLm.xcframework/$platformSubdir")
+                val gemmaPath = File(xcframeworksPath, "GemmaModelConstraintProvider.xcframework/$platformSubdir")
+                
+                compilerOpts(
+                    "-F${liteRtLmPath.absolutePath}",
+                    "-F${gemmaPath.absolutePath}"
+                )
+            }
+        }
+        
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
+            
+            val liteRtLmPath = File(xcframeworksPath, "LiteRtLm.xcframework/$platformSubdir")
+            val gemmaPath = File(xcframeworksPath, "GemmaModelConstraintProvider.xcframework/$platformSubdir")
+            
+            linkerOpts(
+                "-F${liteRtLmPath.absolutePath}",
+                "-F${gemmaPath.absolutePath}",
+                "-framework", "LiteRtLm",
+                "-framework", "GemmaModelConstraintProvider"
+            )
         }
     }
     
@@ -31,6 +64,9 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.koin.android)
+            implementation(libs.gson)
+            implementation(files("./libs/litertlm-android-modified.aar"))
+            implementation(kotlin("reflect"))  // Required by AAR's ToolManager for runtime reflection
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -41,6 +77,7 @@ kotlin {
             implementation(compose.components.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(files("./libs/litertlm-android-modified.aar"))
             
             implementation(libs.ktor.client.core)
             implementation(libs.okio)
@@ -87,4 +124,9 @@ android {
 
 dependencies {
     debugImplementation(compose.uiTooling)
+    add("kspAndroid", project(":tool-processor"))
+}
+
+ksp {
+    arg("toolsJsonPath", file("src/commonMain/composeResources/files/tools.json").absolutePath)
 }

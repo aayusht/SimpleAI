@@ -1,0 +1,12 @@
+# C interop definition for LiteRtLm framework
+# This file tells the Kotlin/Native compiler how to generate Kotlin bindings
+# for the LiteRT LM C API
+
+language = C
+package = litert.lm.c
+
+# Header files to process - use the umbrella header which includes everything
+headers = LiteRtLm/LiteRtLm.h
+
+# Linker options - ensure the framework is linked into the final binary
+linkerOpts = -framework LiteRtLm -framework GemmaModelConstraintProvider

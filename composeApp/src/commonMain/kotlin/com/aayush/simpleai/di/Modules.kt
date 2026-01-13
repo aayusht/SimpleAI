@@ -13,7 +13,7 @@ expect val platformModule: Module
 
 val sharedModule = module {
     single<HttpClient> { createDownloadClient() }
-    viewModel { MainViewModel(get(), get()) }
+    viewModel { MainViewModel(get(), get(), get()) }
 }
 
 fun initKoin(appDeclaration: KoinAppDeclaration = {}) =

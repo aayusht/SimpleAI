@@ -10,9 +10,12 @@
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 .DS_Store
+/composeApp/libs/aar
+/composeApp/libs/maven_extract
+/composeApp/libs/maven-litertlm.aar
 /composeApp/build
-/iosApp/build/ios_arm64
-/iosApp/build/ios_sim_arm64
+/tool-processor/build
+/iosApp/build
 /build
 /captures
 .externalNativeBuild

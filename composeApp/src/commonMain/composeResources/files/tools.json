@@ -1,0 +1,19 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "weather_search",
+      "description": "Search for weather at current location",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "Location to search for, eg \"San Francisco\"."
+          }
+        },
+        "required": ["location"]
+      }
+    }
+  }
+]
