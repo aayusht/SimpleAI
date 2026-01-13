@@ -1,0 +1,31 @@
+// LiteRT-LM Xcode Configuration
+// Add this xcconfig to your Xcode project's build settings
+
+// Swift/Objective-C Bridging Header
+SWIFT_OBJC_BRIDGING_HEADER = $(SRCROOT)/Simple AI/LiteRtLm-Bridging-Header.h
+
+// Framework Search Paths (for the LiteRtLm.framework)
+FRAMEWORK_SEARCH_PATHS = $(inherited) "$(SRCROOT)/build/ios_sim_arm64" "$(SRCROOT)/build/ios_arm64"
+
+// Library Search Paths (for the dylib)
+LIBRARY_SEARCH_PATHS = $(inherited) "$(SRCROOT)/build/ios_sim_arm64" "$(SRCROOT)/build/ios_arm64"
+
+// Linker Flags
+// -ObjC ensures Objective-C categories are loaded
+OTHER_LDFLAGS = $(inherited) -ObjC
+
+// Required Frameworks for LiteRT-LM
+// Add these manually in Xcode's "Link Binary With Libraries"
+// - LiteRtLm.framework (from build/ios_sim_arm64 or build/ios_arm64)
+// - libGemmaModelConstraintProvider.dylib (Embed & Sign)
+// - Accelerate.framework
+// - Metal.framework  
+// - AVFoundation.framework
+// - AudioToolbox.framework
+// - Security.framework
+
+// Enable C++ interop for Swift (Xcode 15+)
+SWIFT_OBJC_INTEROP_MODE = objcxx
+
+// Minimum iOS version
+IPHONEOS_DEPLOYMENT_TARGET = 15.0

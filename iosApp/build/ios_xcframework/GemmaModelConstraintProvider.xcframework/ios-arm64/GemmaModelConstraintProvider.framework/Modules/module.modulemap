@@ -1,0 +1,4 @@
+framework module GemmaModelConstraintProvider {
+    header "GemmaModelConstraintProvider.h"
+    export *
+}

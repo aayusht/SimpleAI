@@ -1,5 +1,6 @@
 *.iml
 .gradle
+.kotlin
 /local.properties
 /.idea
 /.idea/caches
@@ -9,8 +10,12 @@
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 .DS_Store
+/composeApp/build
+/iosApp/build/ios_arm64
+/iosApp/build/ios_sim_arm64
 /build
 /captures
 .externalNativeBuild
 .cxx
 local.properties
+/reference
