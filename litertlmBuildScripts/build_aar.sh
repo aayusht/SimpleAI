@@ -1,59 +1,28 @@
 #!/bin/bash
-# Build LiteRT-LM with ONLY Kotlin changes
+# Build LiteRT-LM with a patch to fix issues/1181
 # 
 # This script downloads the official Maven AAR (with working native libs),
-# extracts the .so files, rebuilds only your Kotlin classes, and combines
-# them into a new AAR.
-#
-# Perfect for when you only need to modify Kotlin code (like Conversation.kt)
-# without touching the C++/JNI layer.
+# extracts the .so files, rebuilds with the patched file, and sticks in the libs
 #
 # Usage:
-#   ./build_kotlin_only.sh --litertlm-dir /path/to/LiteRT-LM [--output-dir /path/to/output]
+#   ./build_aar.sh
 
 set -e
 
-# Parse arguments
-LITERTLM_DIR=""
-OUTPUT_DIR=""
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --litertlm-dir)
-            LITERTLM_DIR="$2"
-            shift 2
-            ;;
-        --output-dir)
-            OUTPUT_DIR="$2"
-            shift 2
-            ;;
-        -h|--help)
-            echo "Usage: $0 --litertlm-dir <path> [--output-dir <path>]"
-            echo ""
-            echo "Arguments:"
-            echo "  --litertlm-dir PATH    Path to LiteRT-LM source directory (required)"
-            echo "  --output-dir PATH      Path to output directory (optional, defaults to ./build_output_kotlin)"
-            echo "  -h, --help            Show this help message"
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Use --help for usage information"
-            exit 1
-            ;;
-    esac
-done
-
-# Validate required arguments
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${SCRIPT_DIR}/.."
+LITERTLM_DIR="${PROJECT_DIR}/LiteRT-LM"
+OUTPUT_DIR="${SCRIPT_DIR}/build"
+FINAL_AAR_DIR="${PROJECT_DIR}/composeApp/libs"
 
 # Check ANDROID_NDK_HOME
 if [ -z "${ANDROID_NDK_HOME}" ]; then
     echo "❌ ERROR: ANDROID_NDK_HOME is not defined."
-    echo "   Please set ANDROID_NDK_HOME to your Android NDK path (required: version 28.0.12433566)"
+    echo "   Please set ANDROID_NDK_HOME to your Android NDK path (required: version 28)"
     exit 1
 elif [ ! -d "${ANDROID_NDK_HOME}" ]; then
     echo "❌ ERROR: ANDROID_NDK_HOME points to non-existent directory: ${ANDROID_NDK_HOME}"
-    echo "   Please install Android NDK r28e (28.0.12433566) and set ANDROID_NDK_HOME accordingly."
+    echo "   Please install Android NDK 28 (28.0.12433566 works) and set ANDROID_NDK_HOME accordingly."
     exit 1
 else
     ndk_source_props="${ANDROID_NDK_HOME}/source.properties"
@@ -63,12 +32,12 @@ else
             echo "⚠️  WARNING: NDK version is $ndk_version, expected 28.x (recommended: 28.0.12433566)"
             echo "   Please download and use NDK 28.0.12433566 to avoid compatibility issues."
         elif [[ $ndk_version != 28.0.12433566 ]]; then
-            echo "⚠️  WARNING: NDK minor version is $ndk_version, recommended: 28.0.12433566"
-            echo "   Consider updating NDK to 28.0.12433566 for maximum compatibility."
+            echo "   NDK minor version is $ndk_version"
+            echo "   If there are issues, switch to 28.0.12433566."
         fi
     else
         echo "⚠️  WARNING: Cannot detect NDK version (missing source.properties at ${ndk_source_props})"
-        echo "   Please ensure NDK 28.0.12433566 is installed and referenced by ANDROID_NDK_HOME."
+        echo "   Please ensure NDK 28 is installed and referenced by ANDROID_NDK_HOME."
     fi
 fi
 
@@ -104,16 +73,6 @@ if [ ! -f "$LITERTLM_DIR/WORKSPACE" ] || [ ! -d "$LITERTLM_DIR/kotlin" ]; then
     exit 1
 fi
 
-# Set default output directory if not specified
-if [ -z "$OUTPUT_DIR" ]; then
-    OUTPUT_DIR="$(pwd)/build_output_kotlin"
-fi
-
-# Convert to absolute path and validate safety
-if [ -z "$OUTPUT_DIR" ]; then
-    OUTPUT_DIR="$(pwd)/build_output_kotlin"
-fi
-
 # Create output directory if it doesn't exist to resolve relative paths
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
@@ -144,10 +103,6 @@ if [ ! -f "${MAVEN_AAR_FILE}" ]; then
     exit 1
 fi
 
-# MAVEN_SIZE=$(stat -f '%z' "${MAVEN_AAR_FILE}")
-# MAVEN_SIZE_MB=$((MAVEN_SIZE / 1024 / 1024))
-# echo "✅ Downloaded Maven AAR (${MAVEN_SIZE_MB}MB)"
-
 echo ""
 echo "=== Step 2: Extracting native libraries from Maven AAR ==="
 
@@ -158,12 +113,6 @@ cd - > /dev/null
 # Copy the native libraries (jni folder) to our AAR
 if [ -d "${OUTPUT_DIR}/maven_extract/jni" ]; then
     cp -r "${OUTPUT_DIR}/maven_extract/jni" "${AAR_DIR}/"
-    echo "✅ Extracted native libraries:"
-    # find "${AAR_DIR}/jni" -name "*.so" | while read so; do
-        # size=$(stat -f '%z' "$so")
-        # size_mb=$((size / 1024 / 1024))
-        # echo "   $(basename $so) (${size_mb}MB)"
-    # done
 else
     echo "❌ ERROR: No jni folder found in Maven AAR"
     exit 1
@@ -179,9 +128,34 @@ fi
 
 echo ""
 echo "=== Step 3: Building YOUR Kotlin classes from source ==="
-echo "    (This includes your modifications to Conversation.kt, etc.)"
 echo "    Source: $LITERTLM_DIR"
 
+# Path to the file we want to patch in the submodule
+CONVERSATION_KT_DEST="$LITERTLM_DIR/kotlin/java/com/google/ai/edge/litertlm/Conversation.kt"
+CONVERSATION_KT_SRC="$SCRIPT_DIR/Conversation.kt"
+
+# Ensure we have a cleanup trap to restore the file
+restore_conversation() {
+    if [ -f "${CONVERSATION_KT_DEST}.bak" ]; then
+        echo "Restoring original Conversation.kt..."
+        # Use cp then rm to avoid issues with symlinks if any exist
+        cp "${CONVERSATION_KT_DEST}.bak" "${CONVERSATION_KT_DEST}"
+        rm "${CONVERSATION_KT_DEST}.bak"
+    fi
+}
+trap restore_conversation EXIT
+
+# Apply the patch
+if [ -f "$CONVERSATION_KT_SRC" ]; then
+    echo "Patching Conversation.kt from $CONVERSATION_KT_SRC..."
+    # Only backup if we haven't already (e.g. from a previous failed run)
+    if [ ! -f "${CONVERSATION_KT_DEST}.bak" ]; then
+        cp "$CONVERSATION_KT_DEST" "${CONVERSATION_KT_DEST}.bak"
+    fi
+    cp "$CONVERSATION_KT_SRC" "$CONVERSATION_KT_DEST"
+else
+    echo "⚠️ Warning: Patch file not found at $CONVERSATION_KT_SRC, building with original source."
+fi
 
 # Build the Kotlin classes (must run from LiteRT-LM directory)
 cd "$LITERTLM_DIR"
@@ -253,21 +227,21 @@ echo "   (Note: ${AAR_DIR}/classes directory preserved for inspection)"
 cd "${AAR_DIR}"
 
 # Add non-native files with compression
-zip ../litertlm-android-modified.aar AndroidManifest.xml classes.jar R.txt
+zip "${FINAL_AAR_DIR}/litertlm-android-modified.aar" AndroidManifest.xml classes.jar R.txt
 
 # Add LICENSE files if present
-[ -f "LICENSE" ] && zip ../litertlm-android-modified.aar LICENSE
-[ -f "THIRD_PARTY_NOTICE.txt" ] && zip ../litertlm-android-modified.aar THIRD_PARTY_NOTICE.txt
+[ -f "LICENSE" ] && zip "${FINAL_AAR_DIR}/litertlm-android-modified.aar" LICENSE
+[ -f "THIRD_PARTY_NOTICE.txt" ] && zip "${FINAL_AAR_DIR}/litertlm-android-modified.aar" THIRD_PARTY_NOTICE.txt
 
 # Add native libraries UNCOMPRESSED (critical for Android!)
-zip -0 -r ../litertlm-android-modified.aar jni/
+zip -0 -r "${FINAL_AAR_DIR}/litertlm-android-modified.aar" jni/
 
 cd - > /dev/null
 
 # Verify
 echo ""
 echo "Verifying AAR structure..."
-if zipinfo "${OUTPUT_DIR}/litertlm-android-modified.aar" | grep "\.so" | grep -q "defN"; then
+if zipinfo "${FINAL_AAR_DIR}/litertlm-android-modified.aar" | grep "\.so" | grep -q "defN"; then
     echo "⚠️  Warning: Some .so files are compressed"
 else
     echo "✅ Native libraries stored uncompressed (correct)"
@@ -276,33 +250,17 @@ fi
 # Show final contents
 echo ""
 echo "Final AAR contents:"
-unzip -l "${OUTPUT_DIR}/litertlm-android-modified.aar" | grep -E "\.so|\.jar|\.xml|\.txt" | awk '{print "  " $4 " (" $1 " bytes)"}'
+unzip -l "${FINAL_AAR_DIR}/litertlm-android-modified.aar" | grep -E "\.so|\.jar|\.xml|\.txt" | awk '{print "  " $4 " (" $1 " bytes)"}'
 
 echo ""
 echo "=============================================="
 echo "=== Build Complete! ==="
 echo "=============================================="
 echo ""
-echo "LiteRT-LM Source: $LITERTLM_DIR"
-echo "Output: ${OUTPUT_DIR}/litertlm-android-modified.aar"
+echo "Output: ${FINAL_AAR_DIR}/litertlm-android-modified.aar"
 echo ""
 echo "This AAR contains:"
 echo "  ✅ Official Maven native libraries (tested & working)"
-echo "  ✅ YOUR modified Kotlin classes (from source)"
-echo "  ✅ Full GPU acceleration support"
-echo "  ✅ TopK GPU sampling support"
+echo "  ✅ Patched Conversation.kt"
 echo ""
-echo "To use in your Android project:"
-echo ""
-echo "1. Copy AAR to your app/libs/ directory:"
-echo "   cp ${OUTPUT_DIR}/litertlm-android-modified.aar /path/to/your/app/libs/"
-echo ""
-echo "2. Update your app/build.gradle.kts:"
-echo ""
-echo "   dependencies {"
-echo "       implementation(files(\"libs/litertlm-android-modified.aar\"))"
-echo "       implementation(\"com.google.code.gson:gson:2.13.2\")"
-echo "       implementation(\"org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0\")"
-echo "       implementation(\"org.jetbrains.kotlin:kotlin-reflect:1.9.0\")"
-echo "   }"
-echo ""
+echo "Android build should be good to go!"]

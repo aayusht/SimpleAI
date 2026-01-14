@@ -1,56 +1,33 @@
 #!/bin/bash
-# Copyright 2025 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 # Build script for LiteRT-LM iOS static framework
 # 
 # This script builds the LiteRT-LM C API as a "thick" static framework for iOS.
-# Unlike thin libraries (libengine.a), the thick framework bundles all dependencies,
-# eliminating undefined symbol errors when linking.
 #
 # The script automatically patches the LiteRT-LM BUILD file to add an
 # ios_static_framework target, builds it, extracts the framework, and restores
 # the original BUILD file.
 # 
 # Usage:
-#   ./build_ios.sh [--simulator|--device|--all] [--litertlm-dir <path>] [--clean]
-#
-# Options:
-#   --simulator      Build for iOS Simulator (arm64, default)
-#   --device         Build for iOS device (arm64)
-#   --all            Build for both simulator and device
-#   --litertlm-dir   Path to LiteRT-LM directory (default: ../)
-#   --clean          Clean bazel build caches before building
+#   ./build_ios.sh
 #
 # Output:
 #   The built frameworks will be placed in:
-#   - build/ios_sim_arm64/LiteRtLm.framework (simulator)
-#   - build/ios_sim_arm64/GemmaModelConstraintProvider.framework (simulator)
-#   - build/ios_arm64/LiteRtLm.framework (device)
-#   - build/ios_arm64/GemmaModelConstraintProvider.framework (device)
-#   - build/ios_xcframework/LiteRtLm.xcframework (universal, if --all)
-#   - build/ios_xcframework/GemmaModelConstraintProvider.xcframework (universal, if --all)
+#   - iosApp/build/ios_sim_arm64/LiteRtLm.framework (simulator)
+#   - iosApp/build/ios_sim_arm64/GemmaModelConstraintProvider.framework (simulator)
+#   - iosApp/build/ios_arm64/LiteRtLm.framework (device)
+#   - iosApp/build/ios_arm64/GemmaModelConstraintProvider.framework (device)
+#   - iosApp/build/ios_xcframework/LiteRtLm.xcframework (universal, if --all)
+#   - iosApp/build/ios_xcframework/GemmaModelConstraintProvider.xcframework (universal, if --all)
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IOS_APP_ROOT="${SCRIPT_DIR}"
+PROJECT_DIR="${SCRIPT_DIR}/.."
+IOS_APP_ROOT="${PROJECT_DIR}/iosApp"
 BUILD_DIR="${IOS_APP_ROOT}/build"
-BAZEL_DIR="${IOS_APP_ROOT}/bazel"
 
 # Default LiteRT-LM directory (assuming it's in the parent directory)
-LITERTLM_DIR="${IOS_APP_ROOT}/.."
+LITERTLM_DIR="${PROJECT_DIR}/LiteRT-LM"
 
 # Track if we've patched the BUILD file
 BUILD_FILE_PATCHED=false
@@ -198,9 +175,9 @@ trap cleanup EXIT
 # Clean bazel caches
 clean_bazel_caches() {
     log_info "Cleaning bazel build caches..."
-    
+
     BAZEL_CACHE_DIR="/private/var/tmp/_bazel_$(whoami)"
-    
+
     if [ -d "${BAZEL_CACHE_DIR}" ]; then
         log_info "Removing ${BAZEL_CACHE_DIR}..."
         # Fix permissions first (bazel sets some files as read-only)
@@ -213,7 +190,7 @@ clean_bazel_caches() {
     else
         log_info "No bazel cache found at ${BAZEL_CACHE_DIR}"
     fi
-    
+
     # Also clean bazel output in the LiteRT-LM directory
     if [ -d "${LITERTLM_DIR}" ]; then
         cd "${LITERTLM_DIR}"
@@ -231,41 +208,107 @@ fix_wrapped_clang() {
     log_info "Checking for LC_UUID compatibility issue..."
     
     BAZEL_CACHE_DIR="/private/var/tmp/_bazel_$(whoami)"
-    WRAPPED_CLANG_SOURCE=""
-    WRAPPED_CLANG_BINARY=""
     
-    # Find the wrapped_clang source and binary
-    if [ -d "${BAZEL_CACHE_DIR}" ]; then
-        WRAPPED_CLANG_SOURCE=$(find "${BAZEL_CACHE_DIR}" -path "*apple_support/crosstool/wrapped_clang.cc" -type f 2>/dev/null | head -1)
-        WRAPPED_CLANG_BINARY=$(find "${BAZEL_CACHE_DIR}" -path "*local_config_apple_cc/wrapped_clang" -type f 2>/dev/null | head -1)
-    fi
-    
-    if [ -z "${WRAPPED_CLANG_BINARY}" ] || [ -z "${WRAPPED_CLANG_SOURCE}" ]; then
-        log_info "No wrapped_clang found (first build or cache cleared). Will fix after first build attempt."
+    if [ ! -d "${BAZEL_CACHE_DIR}" ]; then
+        log_info "No bazel cache found. Will fix after first build attempt."
         NEED_WRAPPED_CLANG_FIX=true
         return 0
     fi
     
-    # Check if wrapped_clang has LC_UUID
-    if otool -l "${WRAPPED_CLANG_BINARY}" 2>/dev/null | grep -q "LC_UUID"; then
-        log_info "wrapped_clang already has LC_UUID. No fix needed."
-        NEED_WRAPPED_CLANG_FIX=false
+    # Find the wrapped_clang source
+    local WRAPPED_CLANG_SOURCE=$(find "${BAZEL_CACHE_DIR}" -path "*apple_support/crosstool/wrapped_clang.cc" -type f 2>/dev/null | head -1)
+    
+    if [ -z "${WRAPPED_CLANG_SOURCE}" ]; then
+        log_info "No wrapped_clang source found (first build or cache cleared). Will fix after first build attempt."
+        NEED_WRAPPED_CLANG_FIX=true
         return 0
     fi
     
-    log_warn "wrapped_clang is missing LC_UUID. Rebuilding with fix..."
+    # Find ALL wrapped_clang and wrapped_clang_pp binaries
+    local WRAPPED_BINARIES=$(find "${BAZEL_CACHE_DIR}" -path "*local_config_apple_cc/wrapped_clang*" -type f 2>/dev/null)
     
-    # Compile wrapped_clang with LC_UUID
-    clang++ -std=c++17 -O2 -Wl,-random_uuid -arch x86_64 -arch arm64 \
-        "${WRAPPED_CLANG_SOURCE}" -o "${WRAPPED_CLANG_BINARY}" 2>&1
-    
-    if [ $? -eq 0 ]; then
-        log_info "Successfully rebuilt wrapped_clang with LC_UUID"
-        NEED_WRAPPED_CLANG_FIX=false
-    else
-        log_error "Failed to rebuild wrapped_clang. Build may fail."
-        NEED_WRAPPED_CLANG_FIX=false
+    if [ -z "${WRAPPED_BINARIES}" ]; then
+        log_info "No wrapped_clang binaries found. Will fix after first build attempt."
+        NEED_WRAPPED_CLANG_FIX=true
+        return 0
     fi
+    
+    # Check and fix each binary
+    local NEEDS_FIX=false
+    local FIXED_COUNT=0
+    
+    while IFS= read -r BINARY; do
+        [ -z "${BINARY}" ] && continue
+        
+        if ! otool -l "${BINARY}" 2>/dev/null | grep -q "LC_UUID"; then
+            NEEDS_FIX=true
+            log_warn "$(basename "${BINARY}") is missing LC_UUID. Rebuilding with fix..."
+            
+            clang++ -std=c++17 -O2 -Wl,-random_uuid -arch x86_64 -arch arm64 \
+                "${WRAPPED_CLANG_SOURCE}" -o "${BINARY}" 2>&1
+            
+            if [ $? -eq 0 ]; then
+                log_info "Successfully rebuilt $(basename "${BINARY}") with LC_UUID"
+                ((FIXED_COUNT++))
+            else
+                log_error "Failed to rebuild $(basename "${BINARY}")"
+            fi
+        fi
+    done <<< "${WRAPPED_BINARIES}"
+    
+    if [ "${NEEDS_FIX}" = false ]; then
+        log_info "All wrapped_clang binaries already have LC_UUID. No fix needed."
+    elif [ ${FIXED_COUNT} -gt 0 ]; then
+        log_info "Fixed ${FIXED_COUNT} wrapped_clang binary(ies)"
+    fi
+    
+    NEED_WRAPPED_CLANG_FIX=false
+}
+
+# Fix all wrapped_clang binaries in the bazel cache
+fix_all_wrapped_clang() {
+    local BAZEL_CACHE_DIR="/private/var/tmp/_bazel_$(whoami)"
+    
+    # Find the source file (only need one)
+    local WRAPPED_CLANG_SOURCE=$(find "${BAZEL_CACHE_DIR}" -path "*apple_support/crosstool/wrapped_clang.cc" -type f 2>/dev/null | head -1)
+    
+    if [ -z "${WRAPPED_CLANG_SOURCE}" ]; then
+        log_error "Could not find wrapped_clang.cc source file"
+        return 1
+    fi
+    
+    log_info "Found wrapped_clang source: ${WRAPPED_CLANG_SOURCE}"
+    
+    # Find ALL wrapped_clang and wrapped_clang_pp binaries (not just the first one)
+    local WRAPPED_BINARIES=$(find "${BAZEL_CACHE_DIR}" -path "*local_config_apple_cc/wrapped_clang*" -type f 2>/dev/null)
+    
+    if [ -z "${WRAPPED_BINARIES}" ]; then
+        log_error "Could not find any wrapped_clang binaries"
+        return 1
+    fi
+    
+    local FIX_COUNT=0
+    while IFS= read -r BINARY; do
+        # Skip if empty
+        [ -z "${BINARY}" ] && continue
+        
+        # Check if this binary needs fixing
+        if ! otool -l "${BINARY}" 2>/dev/null | grep -q "LC_UUID"; then
+            log_info "Fixing: ${BINARY}"
+            clang++ -std=c++17 -O2 -Wl,-random_uuid -arch x86_64 -arch arm64 \
+                "${WRAPPED_CLANG_SOURCE}" -o "${BINARY}" 2>&1 || {
+                log_warn "Failed to fix ${BINARY}"
+                continue
+            }
+            ((FIX_COUNT++))
+        fi
+    done <<< "${WRAPPED_BINARIES}"
+    
+    if [ ${FIX_COUNT} -gt 0 ]; then
+        log_info "Fixed ${FIX_COUNT} wrapped_clang binary(ies) with LC_UUID"
+    fi
+    
+    return 0
 }
 
 # Try build with wrapped_clang fix if needed
@@ -276,7 +319,9 @@ try_build_with_fix() {
     # First attempt
     set +e  # Temporarily disable exit on error
     eval "${BUILD_CMD}" 2>&1 | tee "${LOG_FILE}"
-    local BUILD_RESULT=$?
+    # IMPORTANT: Use PIPESTATUS[0] to get exit code of the first command in pipeline,
+    # not $? which gives exit code of tee (always 0)
+    local BUILD_RESULT=${PIPESTATUS[0]}
     set -e
     
     if [ $BUILD_RESULT -eq 0 ]; then
@@ -287,31 +332,17 @@ try_build_with_fix() {
     if grep -q "missing LC_UUID load command" "${LOG_FILE}" 2>/dev/null; then
         log_warn "Build failed due to LC_UUID issue. Applying fix..."
         
-        # Force fix wrapped_clang
-        BAZEL_CACHE_DIR="/private/var/tmp/_bazel_$(whoami)"
-        WRAPPED_CLANG_SOURCE=$(find "${BAZEL_CACHE_DIR}" -path "*apple_support/crosstool/wrapped_clang.cc" -type f 2>/dev/null | head -1)
-        WRAPPED_CLANG_BINARY=$(find "${BAZEL_CACHE_DIR}" -path "*local_config_apple_cc/wrapped_clang" -type f 2>/dev/null | head -1)
-        
-        if [ -n "${WRAPPED_CLANG_BINARY}" ] && [ -n "${WRAPPED_CLANG_SOURCE}" ]; then
-            log_info "Rebuilding wrapped_clang with LC_UUID..."
-            clang++ -std=c++17 -O2 -Wl,-random_uuid -arch x86_64 -arch arm64 \
-                "${WRAPPED_CLANG_SOURCE}" -o "${WRAPPED_CLANG_BINARY}" 2>&1 || {
-                log_error "Failed to rebuild wrapped_clang"
-                return 1
-            }
-            log_info "Successfully rebuilt wrapped_clang with LC_UUID"
-            
+        # Fix ALL wrapped_clang binaries
+        if fix_all_wrapped_clang; then
             log_info "Retrying build..."
             set +e
             eval "${BUILD_CMD}" 2>&1 | tee "${LOG_FILE}"
-            BUILD_RESULT=$?
+            BUILD_RESULT=${PIPESTATUS[0]}
             set -e
             
             if [ $BUILD_RESULT -eq 0 ]; then
                 return 0
             fi
-        else
-            log_error "Could not find wrapped_clang to fix"
         fi
     fi
     
@@ -716,106 +747,30 @@ usage() {
 main() {
     log_info "LiteRT-LM iOS Build Script"
     log_info "iOS App root: ${IOS_APP_ROOT}"
-    
-    BUILD_SIM=false
-    BUILD_DEVICE=false
-    
-    # Parse arguments
-    if [ $# -eq 0 ]; then
-        BUILD_SIM=true
-    fi
-    
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --simulator)
-                BUILD_SIM=true
-                ;;
-            --device)
-                BUILD_DEVICE=true
-                ;;
-            --all)
-                BUILD_SIM=true
-                BUILD_DEVICE=true
-                ;;
-            --litertlm-dir)
-                shift
-                if [ $# -eq 0 ]; then
-                    log_error "--litertlm-dir requires a path argument"
-                    usage
-                    exit 1
-                fi
-                LITERTLM_DIR="$1"
-                ;;
-            --clean)
-                CLEAN_BUILD=true
-                ;;
-            --help|-h)
-                usage
-                exit 0
-                ;;
-            *)
-                log_error "Unknown option: $1"
-                usage
-                exit 1
-                ;;
-        esac
-        shift
-    done
-    
-    # Normalize and validate LiteRT-LM directory
-    LITERTLM_DIR="$(cd "${LITERTLM_DIR}" 2>/dev/null && pwd)"
-    if [ $? -ne 0 ]; then
-        log_error "LiteRT-LM directory not found: ${LITERTLM_DIR}"
-        exit 1
-    fi
-    
+
     log_info "LiteRT-LM directory: ${LITERTLM_DIR}"
-    
+
     # Verify it looks like a LiteRT-LM directory
     if [ ! -f "${LITERTLM_DIR}/c/engine.h" ] || [ ! -f "${LITERTLM_DIR}/WORKSPACE" ]; then
         log_error "Directory does not appear to be a LiteRT-LM workspace: ${LITERTLM_DIR}"
         log_error "Expected to find c/engine.h and WORKSPACE"
         exit 1
     fi
-    
+
     check_requirements
     setup_xcode_compat
-    
-    # Clean bazel caches if requested
-    if [ "$CLEAN_BUILD" = true ]; then
-        clean_bazel_caches
-    fi
-    
+
     # Create build directory
     mkdir -p "${BUILD_DIR}"
-    
+
     # Run builds
-    if [ "$BUILD_SIM" = true ]; then
-        build_simulator
-    fi
-    
-    if [ "$BUILD_DEVICE" = true ]; then
-        build_device
-    fi
-    
-    # Create XCFramework if both builds were done
-    if [ "$BUILD_SIM" = true ] && [ "$BUILD_DEVICE" = true ]; then
-        create_xcframework
-    fi
-    
+    build_simulator
+    build_device
+    create_xcframework
+
     log_info "Build complete!"
     log_info ""
-    log_info "Next steps:"
-    log_info "1. Add the frameworks to your Xcode project:"
-    if [ "$BUILD_SIM" = true ] && [ "$BUILD_DEVICE" = true ]; then
-        log_info "   - Drag build/ios_xcframework/LiteRtLm.xcframework to Xcode"
-        log_info "   - Drag build/ios_xcframework/GemmaModelConstraintProvider.xcframework to Xcode"
-    else
-        log_info "   - Add build/ios_*/LiteRtLm.framework to 'Link Binary With Libraries'"
-        log_info "   - Add build/ios_*/GemmaModelConstraintProvider.framework to 'Embed Frameworks'"
-    fi
-    log_info "2. Set up the bridging header in Build Settings"
-    log_info "3. Add required frameworks: Accelerate, Metal, MetalPerformanceShaders"
+    log_info "iOS should be good to go!"
 }
 
 main "$@"

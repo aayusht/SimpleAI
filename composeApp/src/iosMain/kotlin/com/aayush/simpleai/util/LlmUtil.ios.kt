@@ -64,7 +64,7 @@ private class IosLlmEngine(private val config: LlmEngineConfig) : LlmEngine {
             
             litert_lm_conversation_config_create(
                 engine = engine,
-                sampler_params = samplerParams.ptr,
+                session_config = litert_lm_session_config_create(samplerParams.ptr),
                 system_message_json = config.systemPrompt
             )
         }
