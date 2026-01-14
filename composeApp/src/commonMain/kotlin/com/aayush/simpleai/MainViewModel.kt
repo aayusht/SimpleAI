@@ -21,35 +21,28 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okio.FileSystem
 import okio.Path.Companion.toPath
 import okio.SYSTEM
-import simpleai.composeapp.generated.resources.Res
+import org.jetbrains.compose.resources.getString
+import simpleai.composeapp.generated.resources.*
 
 data class MainDataState(
-    val greeting: String = "Loading...",
+    val greeting: String = "",
     val downloadState: DownloadState = DownloadState.NotStarted
 ) {
 
-    val downloadProgressSuffix: String
-        get() = when (downloadState) {
-            is DownloadState.Downloading -> {
-                val progressPercent = (downloadState.progress * 100).toInt()
-                " $progressPercent%"
-            }
-            is DownloadState.Completed -> ""
-            else -> ""
-        }
     fun toViewState(): MainViewState = MainViewState(
-        greeting = "$greeting$downloadProgressSuffix",
+        greeting = greeting,
         downloadState = downloadState
     )
 }
 
 data class MainViewState(
-    val greeting: String = "",
-    val downloadState: DownloadState = DownloadState.NotStarted
+    val greeting: String,
+    val downloadState: DownloadState,
 )
 
 class MainViewModel(
@@ -72,6 +65,9 @@ class MainViewModel(
 
     init {
         checkAndDownloadModel()
+        viewModelScope.launch {
+            _dataState.update { it.copy(greeting = getString(Res.string.loading)) }
+        }
     }
 
     private fun checkAndDownloadModel() {
@@ -83,14 +79,14 @@ class MainViewModel(
 
                 if (fileSystem.exists(modelPath)) {
                     _dataState.value = _dataState.value.copy(
-                        greeting = "Model file found",
+                        greeting = getString(Res.string.model_found),
                         downloadState = DownloadState.Completed
                     )
                     // Initialize engine with the existing model
                     initializeEngine(modelPath.toString())
                 } else {
                     _dataState.value = _dataState.value.copy(
-                        greeting = "Downloading model...",
+                        greeting = getString(Res.string.downloading_model),
                         downloadState = DownloadState.NotStarted
                     )
                     
@@ -102,12 +98,7 @@ class MainViewModel(
                         onProgressUpdate = { downloadState ->
                             _dataState.value = _dataState.value.copy(
                                 downloadState = downloadState,
-                                greeting = when (downloadState) {
-                                    is DownloadState.Downloading -> "Downloading model..."
-                                    is DownloadState.Completed -> "Download completed!"
-                                    is DownloadState.Error -> "Download error: ${downloadState.message}"
-                                    else -> "Preparing download..."
-                                }
+                                greeting = downloadState.getMessage()
                             )
                         }
                     )
@@ -118,9 +109,10 @@ class MainViewModel(
                     }
                 }
             } catch (e: Exception) {
+                val errorMessage = e.messageOrUnknown()
                 _dataState.value = _dataState.value.copy(
-                    greeting = "Error: ${e.message}",
-                    downloadState = DownloadState.Error(e.message ?: "Unknown error")
+                    greeting = getString(Res.string.error_prefix, errorMessage),
+                    downloadState = DownloadState.Error(errorMessage)
                 )
             }
         }
@@ -136,7 +128,7 @@ class MainViewModel(
             for (backend in backendsToTry) {
                 try {
                     _dataState.value = _dataState.value.copy(
-                        greeting = "Initializing engine with $backend..."
+                        greeting = getString(Res.string.initializing_engine, backend.name)
                     )
                     
                     engine = llmEngineProvider.createEngine(modelPath, backend)
@@ -153,13 +145,13 @@ class MainViewModel(
                     )
                     
                     conversation = engine?.createConversation(conversationConfig)
-                    
+
                     _dataState.value = _dataState.value.copy(
-                        greeting = "Ready! Engine initialized with $backend"
+                        greeting = getString(Res.string.ready_engine, backend.name)
                     )
                     
                     // Send a test message
-                    sendMessage("Hi what's the weather today in San Francisco?")
+                    sendMessage(getString(Res.string.test_prompt))
                     
                     return@launch // Success, exit the loop
                 } catch (e: Exception) {
@@ -171,9 +163,10 @@ class MainViewModel(
                     
                     // If this was the last backend to try, throw the exception
                     if (backend == backendsToTry.last()) {
+                        val errorMessage = e.messageOrUnknown()
                         _dataState.value = _dataState.value.copy(
-                            greeting = "Failed to initialize: ${e.message}",
-                            downloadState = DownloadState.Error(e.message ?: "Unknown error")
+                            greeting = getString(Res.string.error_prefix, errorMessage),
+                            downloadState = DownloadState.Error(errorMessage)
                         )
                         return@launch
                     }
@@ -182,30 +175,36 @@ class MainViewModel(
         }
     }
     
-    private fun sendMessage(prompt: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                conversation?.sendMessageAsync(
-                    prompt = prompt,
-                    onToken = { partialResponse ->
-                        _dataState.value = _dataState.value.copy(greeting = partialResponse)
-                    },
-                    onDone = { fullResponse ->
+    private suspend fun sendMessage(prompt: String) {
+        try {
+            conversation?.sendMessageAsync(
+                prompt = prompt,
+                onToken = { partialResponse ->
+                    _dataState.value = _dataState.value.copy(greeting = partialResponse)
+                },
+                onDone = { fullResponse ->
+                    if (fullResponse.isEmpty()) {
+                        viewModelScope.launch {
+                            _dataState.value = _dataState.value.copy(
+                                greeting = getString(Res.string.no_response)
+                            )
+                        }
+                    } else {
+                        _dataState.value = _dataState.value.copy(greeting = fullResponse)
+                    }
+                },
+                onError = { throwable ->
+                    viewModelScope.launch {
                         _dataState.value = _dataState.value.copy(
-                            greeting = fullResponse.ifEmpty { "No response" }
-                        )
-                    },
-                    onError = { throwable ->
-                        _dataState.value = _dataState.value.copy(
-                            greeting = "Error: ${throwable.message}"
+                            greeting = getString(Res.string.error_prefix, throwable.messageOrUnknown())
                         )
                     }
-                )
-            } catch (e: Exception) {
-                _dataState.value = _dataState.value.copy(
-                    greeting = "Error: ${e.message}"
-                )
-            }
+                }
+            )
+        } catch (e: Exception) {
+            _dataState.value = _dataState.value.copy(
+                greeting = getString(Res.string.error_prefix, e.messageOrUnknown())
+            )
         }
     }
     
@@ -222,4 +221,7 @@ class MainViewModel(
             // Ignore
         }
     }
+
+    private suspend fun Throwable.messageOrUnknown(): String =
+        message ?: getString(Res.string.unknown_error)
 }

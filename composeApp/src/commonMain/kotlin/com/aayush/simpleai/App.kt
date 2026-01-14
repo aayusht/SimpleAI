@@ -19,11 +19,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import org.koin.compose.viewmodel.koinViewModel
 
 import simpleai.composeapp.generated.resources.Res
-import simpleai.composeapp.generated.resources.compose_multiplatform
+import simpleai.composeapp.generated.resources.*
 import com.aayush.simpleai.util.DownloadState
 
 @Composable
@@ -45,22 +46,6 @@ fun App() {
             
             // Download progress section
             DownloadProgress(viewState.greeting, viewState.downloadState)
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            Button(onClick = { showContent = !showContent }) {
-                Text("Click me!")
-            }
-            AnimatedVisibility(showContent) {
-                val greeting = remember { Greeting().greet() }
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Image(painterResource(Res.drawable.compose_multiplatform), null)
-                    Text("Compose: $greeting")
-                }
-            }
         }
     }
 }
@@ -94,23 +79,23 @@ fun DownloadProgress(greeting: String, downloadState: DownloadState) {
                 val totalMB = if (downloadState.totalBytes > 0) downloadState.totalBytes / 1024 / 1024 else null
                 Text(
                     text = if (totalMB != null) {
-                        "$receivedMB MB / $totalMB MB"
+                        stringResource(Res.string.download_progress, receivedMB, totalMB)
                     } else {
-                        "$receivedMB MB downloaded"
+                        stringResource(Res.string.download_progress_unknown, receivedMB)
                     },
                     style = MaterialTheme.typography.bodySmall
                 )
             }
             is DownloadState.Completed -> {
                 Text(
-                    text = "✓ Ready",
+                    text = stringResource(Res.string.ready),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
             is DownloadState.Error -> {
                 Text(
-                    text = "Error: ${downloadState.message}",
+                    text = stringResource(Res.string.error_prefix, downloadState.message),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error
                 )
