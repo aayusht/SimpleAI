@@ -1,35 +1,14 @@
-This is a Kotlin Multiplatform project targeting Android, iOS.
+Local, simple AI on both Android and iOS built with LiteRT-LM and compose multiplatform.
 
-* [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./composeApp/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./composeApp/src/jvmMain/kotlin)
-    folder is the appropriate location.
+Tool use is supported and seems to work fine. For now the app downloads and uses Gemma E2B.
+By installing this app you agree to gemma's license, I'll include that in the repo eventually.
 
-* [/iosApp](./iosApp/iosApp) contains iOS applications. Even if you’re sharing your UI with Compose Multiplatform,
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+## Setup
 
-### Build and Run Android Application
+Before building the app, you have to run the build scripts in litertlmBuildScripts to create the framework and the aar. You'd think the Android repo could just use LiteRT-LM directly as a dependency, but there's a bug in the repo [here](https://github.com/google-ai-edge/LiteRT-LM/issues/1181) that as of this commit hasn't been addressed.
 
-To build and run the development version of the Android app, use the run configuration from the run widget
-in your IDE’s toolbar or build it directly from the terminal:
-- on macOS/Linux
-  ```shell
-  ./gradlew :composeApp:assembleDebug
-  ```
-- on Windows
-  ```shell
-  .\gradlew.bat :composeApp:assembleDebug
-  ```
+I really have no clue how iOS stuff works but managed to hack together a script to build a framework for the ios app as well. This is lower level and is communicated with through C APIs, all the tool processing code is just on top of that.
 
-### Build and Run iOS Application
+## Development
 
-To build and run the development version of the iOS app, use the run configuration from the run widget
-in your IDE’s toolbar or open the [/iosApp](./iosApp) directory in Xcode and run it from there.
-
----
-
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
+I mean I'm not even done yet but in general the tools are going to be defined in tools.json in composeResources, and their respective executor and system prompt should be updated respectively.
