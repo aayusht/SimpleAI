@@ -41,14 +41,14 @@ else
     fi
 fi
 
-# Check ANDROID_SDK_HOME
-if [ -z "${ANDROID_SDK_HOME}" ]; then
-    echo "❌ ERROR: ANDROID_SDK_HOME is not defined."
-    echo "   Please set ANDROID_SDK_HOME to your Android SDK path."
+# Check ANDROID_HOME
+if [ -z "${ANDROID_HOME}" ]; then
+    echo "❌ ERROR: ANDROID_HOME is not defined."
+    echo "   Please set ANDROID_HOME to your Android SDK path."
     exit 1
-elif [ ! -d "${ANDROID_SDK_HOME}" ]; then
-    echo "❌ ERROR: ANDROID_SDK_HOME points to non-existent directory: ${ANDROID_SDK_HOME}"
-    echo "   Please install the Android SDK and set ANDROID_SDK_HOME accordingly."
+elif [ ! -d "${ANDROID_HOME}" ]; then
+    echo "❌ ERROR: ANDROID_HOME points to non-existent directory: ${ANDROID_HOME}"
+    echo "   Please install the Android SDK and set ANDROID_HOME accordingly."
     exit 1
 fi
 
@@ -107,7 +107,7 @@ echo ""
 echo "=== Step 2: Extracting native libraries from Maven AAR ==="
 
 cd "${OUTPUT_DIR}/maven_extract"
-unzip -q "${MAVEN_AAR_FILE}"
+unzip -o -q "${MAVEN_AAR_FILE}"
 cd - > /dev/null
 
 # Copy the native libraries (jni folder) to our AAR
@@ -225,6 +225,8 @@ echo "   (Note: ${AAR_DIR}/classes directory preserved for inspection)"
 
 # Create the final AAR
 cd "${AAR_DIR}"
+
+mkdir -p "${FINAL_AAR_DIR}"
 
 # Add non-native files with compression
 zip "${FINAL_AAR_DIR}/litertlm-android-modified.aar" AndroidManifest.xml classes.jar R.txt
