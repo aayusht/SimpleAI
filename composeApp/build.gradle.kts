@@ -77,7 +77,6 @@ kotlin {
             implementation(compose.components.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
-            implementation(files("./libs/litertlm-android-modified.aar"))
             
             implementation(libs.ktor.client.core)
             implementation(libs.okio)

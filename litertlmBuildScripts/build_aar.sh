@@ -81,11 +81,12 @@ AAR_DIR="${OUTPUT_DIR}/aar"
 MAVEN_AAR_URL="https://dl.google.com/android/maven2/com/google/ai/edge/litertlm/litertlm-android/0.9.0-alpha01/litertlm-android-0.9.0-alpha01.aar"
 MAVEN_AAR_FILE="${OUTPUT_DIR}/maven-litertlm.aar"
 
-echo "=== Building LiteRT-LM (Kotlin Only) ==="
+echo "=== Building LiteRT-LM (Kotlin + JNI) ==="
 echo "    Source directory: $LITERTLM_DIR"
 echo "    Output directory: $OUTPUT_DIR"
-echo "    Using official Maven AAR for native libraries"
-echo "    Rebuilding only Kotlin classes from source"
+echo "    Using official Maven AAR as a base"
+echo "    Rebuilding Kotlin classes from source"
+echo "    Rebuilding JNI library (.so) from source"
 echo ""
 
 # Create output directories (will reuse if they exist)
@@ -130,33 +131,6 @@ echo ""
 echo "=== Step 3: Building YOUR Kotlin classes from source ==="
 echo "    Source: $LITERTLM_DIR"
 
-# Path to the file we want to patch in the submodule
-CONVERSATION_KT_DEST="$LITERTLM_DIR/kotlin/java/com/google/ai/edge/litertlm/Conversation.kt"
-CONVERSATION_KT_SRC="$SCRIPT_DIR/Conversation.kt"
-
-# Ensure we have a cleanup trap to restore the file
-restore_conversation() {
-    if [ -f "${CONVERSATION_KT_DEST}.bak" ]; then
-        echo "Restoring original Conversation.kt..."
-        # Use cp then rm to avoid issues with symlinks if any exist
-        cp "${CONVERSATION_KT_DEST}.bak" "${CONVERSATION_KT_DEST}"
-        rm "${CONVERSATION_KT_DEST}.bak"
-    fi
-}
-trap restore_conversation EXIT
-
-# Apply the patch
-if [ -f "$CONVERSATION_KT_SRC" ]; then
-    echo "Patching Conversation.kt from $CONVERSATION_KT_SRC..."
-    # Only backup if we haven't already (e.g. from a previous failed run)
-    if [ ! -f "${CONVERSATION_KT_DEST}.bak" ]; then
-        cp "$CONVERSATION_KT_DEST" "${CONVERSATION_KT_DEST}.bak"
-    fi
-    cp "$CONVERSATION_KT_SRC" "$CONVERSATION_KT_DEST"
-else
-    echo "⚠️ Warning: Patch file not found at $CONVERSATION_KT_SRC, building with original source."
-fi
-
 # Build the Kotlin classes (must run from LiteRT-LM directory)
 cd "$LITERTLM_DIR"
 bazel build -c opt \
@@ -194,6 +168,51 @@ if find "${AAR_DIR}/classes" -name "*.so" | grep -q .; then
     echo "⚠️  WARNING: .so files found in classes directory (this may cause issues)"
     echo "   If you encounter problems, manually clean ${AAR_DIR}/classes and rebuild"
 fi
+
+echo ""
+echo "=== Step 3b: Building YOUR JNI libraries from source ==="
+echo "    Target: //kotlin/java/com/google/ai/edge/litertlm/jni:litertlm_jni"
+
+# Build arm64-v8a JNI .so
+echo "Building JNI for arm64-v8a..."
+bazel build -c opt \
+    --config=android_arm64 \
+    //kotlin/java/com/google/ai/edge/litertlm/jni:litertlm_jni
+
+ARM64_BAZEL_BIN="$(bazel info bazel-bin --config=android_arm64)"
+ARM64_JNI_SO="${ARM64_BAZEL_BIN}/kotlin/java/com/google/ai/edge/litertlm/jni/liblitertlm_jni.so"
+if [ ! -f "${ARM64_JNI_SO}" ]; then
+    echo "❌ ERROR: arm64 JNI .so not found at ${ARM64_JNI_SO}"
+    exit 1
+fi
+cp -f "${ARM64_JNI_SO}" "${AAR_DIR}/jni/arm64-v8a/liblitertlm_jni.so"
+echo "✅ Updated arm64-v8a JNI .so"
+
+# liblitertlm_jni.so depends on libGemmaModelConstraintProvider.so on arm64.
+# Package the prebuilt provider alongside it so System.loadLibrary succeeds.
+GEMMA_PROVIDER_SO_SRC="${LITERTLM_DIR}/prebuilt/android_arm64/libGemmaModelConstraintProvider.so"
+if [ -f "${GEMMA_PROVIDER_SO_SRC}" ]; then
+    cp -f "${GEMMA_PROVIDER_SO_SRC}" "${AAR_DIR}/jni/arm64-v8a/libGemmaModelConstraintProvider.so"
+    echo "✅ Packaged libGemmaModelConstraintProvider.so (arm64-v8a)"
+else
+    echo "❌ ERROR: Missing ${GEMMA_PROVIDER_SO_SRC} (required by arm64 liblitertlm_jni.so)"
+    exit 1
+fi
+
+# Build x86_64 JNI .so (emulator)
+echo "Building JNI for x86_64..."
+bazel build -c opt \
+    --config=android_x86_64 \
+    //kotlin/java/com/google/ai/edge/litertlm/jni:litertlm_jni
+
+X86_64_BAZEL_BIN="$(bazel info bazel-bin --config=android_x86_64)"
+X86_64_JNI_SO="${X86_64_BAZEL_BIN}/kotlin/java/com/google/ai/edge/litertlm/jni/liblitertlm_jni.so"
+if [ ! -f "${X86_64_JNI_SO}" ]; then
+    echo "❌ ERROR: x86_64 JNI .so not found at ${X86_64_JNI_SO}"
+    exit 1
+fi
+cp -f "${X86_64_JNI_SO}" "${AAR_DIR}/jni/x86_64/liblitertlm_jni.so"
+echo "✅ Updated x86_64 JNI .so"
 
 echo ""
 echo "=== Step 4: Creating combined AAR package ==="
@@ -260,9 +279,5 @@ echo "=== Build Complete! ==="
 echo "=============================================="
 echo ""
 echo "Output: ${FINAL_AAR_DIR}/litertlm-android-modified.aar"
-echo ""
-echo "This AAR contains:"
-echo "  ✅ Official Maven native libraries (tested & working)"
-echo "  ✅ Patched Conversation.kt"
 echo ""
 echo "Android build should be good to go!"]

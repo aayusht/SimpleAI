@@ -8,6 +8,7 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
+import com.google.ai.edge.litertlm.LiteRtLmJni
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ConversationConfig
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -53,8 +54,28 @@ private class AndroidLlmEngine(
         val systemMessage = config.systemPrompt?.let { 
             Message.of(listOf(Content.Text(it)))
         }
+
+
+
+        val preface = """
+        [
+          {
+            "role": "user",
+            "content": [
+              { "type": "text", "text": "Please address me as big john for the rest of the conversation." }
+            ]
+          },
+          {
+            "role": "model",
+            "content": [
+              { "type": "text", "text": "You got it, big john." }
+            ]
+          }
+        ]
+        """.trimIndent()
         
         val conversationConfig = ConversationConfig(
+            prefaceMessagesJson = preface,
             samplerConfig = samplerConfig,
             tools = listOf(toolSet),
             systemMessage = systemMessage
