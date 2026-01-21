@@ -1,10 +1,13 @@
 package com.aayush.simpleai.util
 
-import io.ktor.client.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.utils.io.*
+import io.ktor.client.HttpClient
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentLength
+import io.ktor.utils.io.readAvailable
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath

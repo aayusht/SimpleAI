@@ -2,15 +2,17 @@ package com.aayush.simpleai
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aayush.simpleai.llm.Backend
+import com.aayush.simpleai.llm.Conversation
+import com.aayush.simpleai.llm.ConversationConfig
+import com.aayush.simpleai.llm.Engine
+import com.aayush.simpleai.llm.EngineConfig
+import com.aayush.simpleai.llm.Message
+import com.aayush.simpleai.llm.SampleWeatherSearchTool
+import com.aayush.simpleai.llm.SamplerConfig
 import com.aayush.simpleai.util.DownloadState
 import com.aayush.simpleai.util.DownloadProvider
 import com.aayush.simpleai.util.E2B_MODEL_FILE_NAME
-import com.aayush.simpleai.util.LlmBackend
-import com.aayush.simpleai.util.LlmConversation
-import com.aayush.simpleai.util.LlmConversationConfig
-import com.aayush.simpleai.util.LlmEngine
-import com.aayush.simpleai.util.LlmEngineProvider
-import com.aayush.simpleai.util.LlmSamplerConfig
 import com.aayush.simpleai.util.MODEL_DOWNLOAD_URL
 import com.aayush.simpleai.util.downloadFile
 import io.ktor.client.HttpClient
@@ -48,11 +50,10 @@ data class MainViewState(
 class MainViewModel(
     private val downloadProvider: DownloadProvider,
     private val httpClient: HttpClient,
-    private val llmEngineProvider: LlmEngineProvider
 ) : ViewModel() {
     
-    private var engine: LlmEngine? = null
-    private var conversation: LlmConversation? = null
+    private var engine: Engine? = null
+    private var conversation: Conversation? = null
     
     private val _dataState = MutableStateFlow(MainDataState())
     val viewState: StateFlow<MainViewState> = _dataState
@@ -120,7 +121,7 @@ class MainViewModel(
     
     private fun initializeEngine(modelPath: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val backendsToTry = listOf(LlmBackend.GPU, LlmBackend.CPU)
+            val backendsToTry = listOf(Backend.GPU, Backend.CPU)
             
             // Load system prompt from file
             val systemPrompt = Res.readBytes("files/system_prompt.md").decodeToString()
@@ -131,17 +132,28 @@ class MainViewModel(
                         greeting = getString(Res.string.initializing_engine, backend.name)
                     )
                     
-                    engine = llmEngineProvider.createEngine(modelPath, backend)
-                    engine?.initialize()
+                    engine = Engine(
+                        EngineConfig(
+                            modelPath = modelPath,
+                            backend = backend.value
+                        )
+                    ).apply { initialize() }
                     
                     // Create conversation with config including system prompt
-                    val conversationConfig = LlmConversationConfig(
-                        samplerConfig = LlmSamplerConfig(
+                    val conversationConfig = ConversationConfig(
+                        samplerConfig = SamplerConfig(
                             topK = 40,
                             topP = 0.95,
                             temperature = 0.8
                         ),
-                        systemPrompt = systemPrompt
+                        systemPrompt = systemPrompt,
+                        tools = listOf(SampleWeatherSearchTool()),
+                        prefillMessages = listOf(
+                            Message.user(
+                                "Please address me as big john for the rest of the conversation."
+                            ),
+                            Message.assistant(text = "You got it, big john.")
+                        )
                     )
                     
                     conversation = engine?.createConversation(conversationConfig)

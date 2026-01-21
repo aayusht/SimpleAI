@@ -15,10 +15,3 @@ You can help with:
 - General problem solving
 - Explaining concepts
 
-To execute a search (in this case for the weather), output the following json, with included backticks:
-```tool_code
-print(default_api.weather_search(location="San Francisco"))
-```
-
-You will receive a response, and then can answer the question accordingly after receiving context.
-

@@ -6,7 +6,6 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
-    alias(libs.plugins.ksp)
 }
 
 kotlin {
@@ -123,9 +122,4 @@ android {
 
 dependencies {
     debugImplementation(compose.uiTooling)
-    add("kspAndroid", project(":tool-processor"))
-}
-
-ksp {
-    arg("toolsJsonPath", file("src/commonMain/composeResources/files/tools.json").absolutePath)
 }

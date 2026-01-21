@@ -31,6 +31,7 @@ LITERTLM_DIR="${PROJECT_DIR}/LiteRT-LM"
 
 # Track if we've patched the BUILD file
 BUILD_FILE_PATCHED=false
+ENGINE_FILES_PATCHED=false
 ORIGINAL_BUILD_FILE=""
 
 # Colors for output
@@ -153,6 +154,123 @@ EOF
     log_info "BUILD file patched successfully."
 }
 
+# Patch engine.h and engine.cc to add RunPrefill and RunDecode to C API
+# (These are needed because the high-level Conversation API doesn't support
+# history restoration, so we use low-level Session API instead).
+patch_engine_files() {
+    local ENGINE_H="${LITERTLM_DIR}/c/engine.h"
+    local ENGINE_CC="${LITERTLM_DIR}/c/engine.cc"
+
+    if grep -q "litert_lm_session_run_prefill" "${ENGINE_H}" 2>/dev/null; then
+        log_info "Engine files already patched. No patching needed."
+        ENGINE_FILES_PATCHED=false
+        return 0
+    fi
+
+    log_info "Patching engine.h and engine.cc to add RunPrefill and RunDecode..."
+
+    # Create backups
+    cp "${ENGINE_H}" "${ENGINE_H}.backup"
+    cp "${ENGINE_CC}" "${ENGINE_CC}.backup"
+
+    # Patch engine.h
+    # Insert before litert_lm_responses_delete
+    # macOS sed is picky: 'i' needs a newline after it
+    sed -i '' '/void litert_lm_responses_delete(LiteRtLmResponses\* responses);/i\
+\
+LITERT_LM_C_API_EXPORT \\\
+void litert_lm_session_run_prefill(LiteRtLmSession* session, \\\
+                                  const InputData* inputs, \\\
+                                  size_t num_inputs); \\\
+\\\
+LITERT_LM_C_API_EXPORT \\\
+LiteRtLmResponses* litert_lm_session_run_decode(LiteRtLmSession* session); \
+' "${ENGINE_H}"
+
+    # Patch engine.cc
+    # We want to insert the implementation before litert_lm_session_generate_content_stream
+    cat > "${ENGINE_CC}.patch" << 'EOF'
+
+void litert_lm_session_run_prefill(LiteRtLmSession* session,
+                                  const InputData* inputs,
+                                  size_t num_inputs) {
+  if (!session || !session->session) {
+    return;
+  }
+  std::vector<std::variant<litert::lm::InputText, litert::lm::InputImage,
+                           litert::lm::InputAudio, litert::lm::InputAudioEnd>>
+      engine_inputs;
+  engine_inputs.reserve(num_inputs);
+  for (size_t i = 0; i < num_inputs; ++i) {
+    switch (inputs[i].type) {
+      case kInputText:
+        engine_inputs.emplace_back(InputText(std::string(
+            static_cast<const char*>(inputs[i].data), inputs[i].size)));
+        break;
+      case kInputImage:
+        engine_inputs.emplace_back(litert::lm::InputImage(std::string(
+            static_cast<const char*>(inputs[i].data), inputs[i].size)));
+        break;
+      case kInputAudio:
+        engine_inputs.emplace_back(litert::lm::InputAudio(std::string(
+            static_cast<const char*>(inputs[i].data), inputs[i].size)));
+        break;
+      case kInputAudioEnd:
+        engine_inputs.emplace_back(litert::lm::InputAudioEnd());
+        break;
+    }
+  }
+  auto status = session->session->RunPrefill(std::move(engine_inputs));
+  if (!status.ok()) {
+    ABSL_LOG(ERROR) << "Failed to run prefill: " << status;
+  }
+}
+
+LiteRtLmResponses* litert_lm_session_run_decode(LiteRtLmSession* session) {
+  if (!session || !session->session) {
+    return nullptr;
+  }
+  auto responses = session->session->RunDecode();
+  if (!responses.ok()) {
+    ABSL_LOG(ERROR) << "Failed to run decode: " << responses.status();
+    return nullptr;
+  }
+
+  auto* c_responses = new LiteRtLmResponses{std::move(*responses)};
+  return c_responses;
+}
+EOF
+
+    # Insert implementation before litert_lm_session_generate_content_stream
+    # Using a temporary file and 'sed' with the 'r' command is safest on macOS
+    sed -i '' '/int litert_lm_session_generate_content_stream/ {
+i\
+
+r '"${ENGINE_CC}.patch"'
+}' "${ENGINE_CC}"
+    rm "${ENGINE_CC}.patch"
+
+    ENGINE_FILES_PATCHED=true
+    log_info "Engine files patched successfully."
+}
+
+# Restore the original engine files
+restore_engine_files() {
+    if [ "${ENGINE_FILES_PATCHED}" = true ]; then
+        local ENGINE_H="${LITERTLM_DIR}/c/engine.h"
+        local ENGINE_CC="${LITERTLM_DIR}/c/engine.cc"
+        if [ -f "${ENGINE_H}.backup" ]; then
+            log_info "Restoring original engine.h..."
+            mv "${ENGINE_H}.backup" "${ENGINE_H}"
+        fi
+        if [ -f "${ENGINE_CC}.backup" ]; then
+            log_info "Restoring original engine.cc..."
+            mv "${ENGINE_CC}.backup" "${ENGINE_CC}"
+        fi
+        ENGINE_FILES_PATCHED=false
+    fi
+}
+
 # Restore the original BUILD file
 restore_build_file() {
     if [ "${BUILD_FILE_PATCHED}" = true ] && [ -n "${ORIGINAL_BUILD_FILE}" ]; then
@@ -162,6 +280,7 @@ restore_build_file() {
             BUILD_FILE_PATCHED=false
         fi
     fi
+    restore_engine_files
 }
 
 # Cleanup function to ensure BUILD file is restored on exit
@@ -509,6 +628,7 @@ build_simulator() {
     
     # Patch the BUILD file to add ios_static_framework target
     patch_build_file
+    patch_engine_files
     
     # Try to fix wrapped_clang before build
     fix_wrapped_clang
@@ -571,6 +691,7 @@ build_device() {
     
     # Patch the BUILD file to add ios_static_framework target
     patch_build_file
+    patch_engine_files
     
     # Try to fix wrapped_clang before build
     fix_wrapped_clang
