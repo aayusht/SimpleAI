@@ -8,8 +8,8 @@ import com.aayush.simpleai.llm.ConversationConfig
 import com.aayush.simpleai.llm.Engine
 import com.aayush.simpleai.llm.EngineConfig
 import com.aayush.simpleai.llm.Message
-import com.aayush.simpleai.llm.SampleWeatherSearchTool
 import com.aayush.simpleai.llm.SamplerConfig
+import com.aayush.simpleai.llm.ToolDefinition
 import com.aayush.simpleai.util.DownloadState
 import com.aayush.simpleai.util.DownloadProvider
 import com.aayush.simpleai.util.E2B_MODEL_FILE_NAME
@@ -147,7 +147,7 @@ class MainViewModel(
                             temperature = 0.8
                         ),
                         systemPrompt = systemPrompt,
-                        tools = listOf(SampleWeatherSearchTool()),
+                        tools = listOf(ToolDefinition.SampleWeatherSearchTool()),
                         prefillMessages = listOf(
                             Message.user(
                                 "Please address me as big john for the rest of the conversation."
