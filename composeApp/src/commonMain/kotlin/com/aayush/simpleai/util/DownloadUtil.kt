@@ -15,9 +15,6 @@ import okio.SYSTEM
 import okio.buffer
 import okio.use
 import kotlin.time.Clock
-import org.jetbrains.compose.resources.getString
-import simpleai.composeapp.generated.resources.Res
-import simpleai.composeapp.generated.resources.*
 
 sealed class DownloadState() {
     data object NotStarted : DownloadState()
@@ -27,21 +24,14 @@ sealed class DownloadState() {
         val bytesPerSecond: Long = 0,
         val remainingMs: Long = 0
     ) : DownloadState() {
+
+        val totalMB = totalBytes / 1024 / 1024
+        val receivedMB = receivedBytes / 1024 / 1024
         val progress: Float
             get() = if (totalBytes > 0) receivedBytes.toFloat() / totalBytes else 0f
-
-        val progressString: String
-            get() = "${(progress * 100).toInt()}.${((progress * 100) % 1 * 100).toInt()}"
     }
     data object Completed : DownloadState()
     data class Error(val message: String) : DownloadState()
-    
-    suspend fun getMessage(): String = when (this) {
-        is Downloading -> getString(Res.string.downloading_model) + " ${(progress * 100).toInt()}%"
-        is Completed -> getString(Res.string.download_completed)
-        is Error -> getString(Res.string.download_error, message)
-        is NotStarted -> getString(Res.string.preparing_download)
-    }
 }
 
 /**

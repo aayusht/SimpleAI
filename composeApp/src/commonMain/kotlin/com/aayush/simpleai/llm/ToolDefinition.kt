@@ -1,51 +1,95 @@
 package com.aayush.simpleai.llm
 
-sealed class ToolDefinition(
-    val name: String,
-    val description: String,
-    val parameters: List<ToolParameter> = emptyList(),
-) {
+import com.aayush.simpleai.util.EnginePtr
 
-    abstract fun handle(args: Map<String, Any?>): String
+sealed class ToolParamType<T>(val jsonType: String, val pyExample: String) {
+    abstract fun extract(value: Any?): T?
 
-    enum class ToolParamType(val jsonType: String) {
-        STRING("string"),
-        INTEGER("integer"),
-        NUMBER("number"),
-        BOOLEAN("boolean"),
-        ARRAY("array"),
-        OBJECT("object")
+    data object STRING : ToolParamType<String>(jsonType = "string", pyExample = "'string value'") {
+        override fun extract(value: Any?): String? = value as? String
     }
 
-    data class ToolParameter(
-        val name: String,
-        val type: ToolParamType = ToolParamType.STRING,
-        val description: String = "",
-        val required: Boolean = true
-    )
+    data object INTEGER : ToolParamType<Int>(jsonType = "integer", pyExample = "42") {
+        override fun extract(value: Any?): Int? = (value as? Number)?.toInt()
+    }
 
-    class SampleWeatherSearchTool : ToolDefinition(
-        name = "weather_search",
-        description = "Search for weather at current location",
-        parameters = listOf(
-            ToolParameter(
-                name = "location",
-                type = ToolParamType.STRING,
-                description = "Location to search for, eg \"San Francisco\".",
-                required = true
-            )
-        ),
-    ) {
-        override fun handle(args: Map<String, Any?>): String {
-            val location = args["location"] as? String
-                ?: throw IllegalArgumentException("Invalid or missing location")
-            return handle(location)
+    data object NUMBER : ToolParamType<Double>(jsonType = "number", pyExample = "6.7") {
+        override fun extract(value: Any?): Double? = (value as? Number)?.toDouble()
+    }
+
+    data object BOOLEAN : ToolParamType<Boolean>(jsonType = "boolean", pyExample = "True") {
+        override fun extract(value: Any?): Boolean? = value as? Boolean
+    }
+
+//    data object ARRAY : ToolParamType<List<Any?>>("array") {
+//        override fun extract(value: Any?): List<Any?>? = value as? List<Any?>
+//    }
+//
+//    data object OBJECT : ToolParamType<Map<String, Any?>>("object") {
+//        override fun extract(value: Any?): Map<String, Any?>? = value as? Map<String, Any?>
+//    }
+}
+
+sealed class ToolParameter<T>(
+    val name: String,
+    val type: ToolParamType<T>,
+    val description: String = "",
+    val required: Boolean = true,
+) {
+
+    class OptionalToolParameter<T>(
+        name: String,
+        type: ToolParamType<T>,
+        description: String = "",
+    ) : ToolParameter<T>(name, type, description, false) {
+        fun get(args: Map<String, Any?>): T? {
+            return type.extract(args[name])
         }
+    }
 
-        private fun handle(location: String): String {
-            return "It's cold and rainy today, with a high of 20F and " +
-                    "1 inch of rain predicted today with a 90% chance"
+    class Required<T>(
+        name: String,
+        type: ToolParamType<T>,
+        description: String = "",
+    ) : ToolParameter<T>(name, type, description, true) {
+        fun get(args: Map<String, Any?>): T {
+            return type.extract(args[name])
+                ?: throw IllegalArgumentException("Missing required parameter: $name")
         }
     }
 }
 
+sealed class ToolDefinition(
+    val name: String,
+    val description: String,
+) {
+    open val parameters: List<ToolParameter<*>> = emptyList()
+
+    val pyArgsString: String
+        get() = parameters.joinToString(separator = ", ") { "${it.name}: ${it.type.jsonType}" }
+
+
+    abstract suspend fun handle(args: Map<String, Any?>, engine: EnginePtr): String
+
+    class WebSearchTool : ToolDefinition(
+        name = "web_search",
+        description = """
+            Search for any needed information and receive a summary of results.
+            When referencing links, use the following format: 
+            [text to display](https://www.example.com)
+            """.trim(),
+    ) {
+        private val queryParam = ToolParameter.Required(
+            name = "query",
+            type = ToolParamType.STRING,
+            description = "Information you would like to query the web for"
+        )
+
+        override val parameters = listOf(queryParam)
+
+        override suspend fun handle(args: Map<String, Any?>, engine: EnginePtr): String {
+            val query: String = queryParam.get(args)
+            return webSearch(query, engine)
+        }
+    }
+}

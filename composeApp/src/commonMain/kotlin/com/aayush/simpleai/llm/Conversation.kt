@@ -108,7 +108,7 @@ class Conversation internal constructor(
         if (messages.isEmpty()) return
         val prompt = renderFullPrompt(
             systemPrompt = config.systemPrompt,
-            toolsJson = toolRegistry.getOpenApiToolsJson(),
+            toolRegistry = toolRegistry,
             messages = messages
         )
         if (prompt.isNotBlank()) {
@@ -145,7 +145,7 @@ class Conversation internal constructor(
         val responses = toolCalls.map { toolCall ->
             ToolResponse(
                 name = toolCall.name,
-                response = toolRegistry.execute(toolCall.name, toolCall.arguments)
+                response = toolRegistry.execute(toolCall.name, toolCall.arguments, engine)
             )
         }
         val toolMessage = Message.toolResponses(responses)
@@ -161,7 +161,7 @@ class Conversation internal constructor(
             val messages = history + message
             renderFullPrompt(
                 systemPrompt = config.systemPrompt,
-                toolsJson = toolRegistry.getOpenApiToolsJson(),
+                toolRegistry = toolRegistry,
                 messages = messages
             )
         } else {

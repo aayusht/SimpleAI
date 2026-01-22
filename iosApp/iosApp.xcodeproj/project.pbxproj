@@ -42,6 +42,7 @@
 		4583E0232F15A3B8004AB221 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		4583E0252F15A3C1004AB221 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
 		4583E0272F15B076004AB221 /* GemmaModelConstraintProvider.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GemmaModelConstraintProvider.xcframework; path = build/ios_xcframework/GemmaModelConstraintProvider.xcframework; sourceTree = "<group>"; };
+		45F4A6D32F21C21C007CF86B /* iosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iosApp.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -115,6 +116,7 @@
 		62EBF6526D8C9F3958A6B4C2 = {
 			isa = PBXGroup;
 			children = (
+				45F4A6D32F21C21C007CF86B /* iosApp.entitlements */,
 				2DFD4A972FA16492A3C1D9C8 /* Configuration */,
 				2AB557ED4C243149130C1748 /* iosApp */,
 				4583E00F2F158B44004AB221 /* Frameworks */,
@@ -232,10 +234,11 @@
 				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_ASSET_PATHS = "\"iosApp/Preview Content\"";
-				DEVELOPMENT_TEAM = "${TEAM_ID}";
+				DEVELOPMENT_TEAM = K2JUJ7XQ3G;
 				ENABLE_PREVIEWS = YES;
 				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/build/ios_xcframework";
 				GENERATE_INFOPLIST_FILE = YES;
@@ -390,10 +393,11 @@
 				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_ASSET_PATHS = "\"iosApp/Preview Content\"";
-				DEVELOPMENT_TEAM = "${TEAM_ID}";
+				DEVELOPMENT_TEAM = K2JUJ7XQ3G;
 				ENABLE_PREVIEWS = YES;
 				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/build/ios_xcframework";
 				GENERATE_INFOPLIST_FILE = YES;

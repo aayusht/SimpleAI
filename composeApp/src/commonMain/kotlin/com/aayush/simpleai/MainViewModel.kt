@@ -7,12 +7,13 @@ import com.aayush.simpleai.llm.Conversation
 import com.aayush.simpleai.llm.ConversationConfig
 import com.aayush.simpleai.llm.Engine
 import com.aayush.simpleai.llm.EngineConfig
-import com.aayush.simpleai.llm.Message
+import com.aayush.simpleai.llm.Role
 import com.aayush.simpleai.llm.SamplerConfig
 import com.aayush.simpleai.llm.ToolDefinition
 import com.aayush.simpleai.util.DownloadState
 import com.aayush.simpleai.util.DownloadProvider
 import com.aayush.simpleai.util.E2B_MODEL_FILE_NAME
+import com.aayush.simpleai.util.E4B_MODEL_FILE_NAME
 import com.aayush.simpleai.util.MODEL_DOWNLOAD_URL
 import com.aayush.simpleai.util.downloadFile
 import io.ktor.client.HttpClient
@@ -21,6 +22,7 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -30,22 +32,32 @@ import okio.Path.Companion.toPath
 import okio.SYSTEM
 import org.jetbrains.compose.resources.getString
 import simpleai.composeapp.generated.resources.*
+import kotlin.time.Clock
 
-data class MainDataState(
-    val greeting: String = "",
-    val downloadState: DownloadState = DownloadState.NotStarted
+internal data class ChatMessage(
+    val id: Long,
+    val role: Role,
+    val content: String,
+    val isLoading: Boolean = false
 ) {
-
-    fun toViewState(): MainViewState = MainViewState(
-        greeting = greeting,
-        downloadState = downloadState
-    )
+    fun copyWithContent(content: String): ChatMessage = copy(content = content, isLoading = false)
 }
 
-data class MainViewState(
-    val greeting: String,
-    val downloadState: DownloadState,
-)
+private data class MainDataState(
+    val downloadState: DownloadState = DownloadState.NotStarted,
+    val isEngineReady: Boolean = false,
+    val messages: List<ChatMessage> = emptyList(),
+    val generatingMessage: ChatMessage? = null,
+) {
+    fun copyWithNewMessage(content: String, isFinal: Boolean = false): MainDataState {
+        val generatingMessage = generatingMessage ?: return this
+        val newMessage = generatingMessage.copy(content = content, isLoading = false)
+        if (isFinal) {
+            return copy(generatingMessage = null, messages = messages + newMessage)
+        }
+        return copy(generatingMessage = newMessage)
+    }
+}
 
 class MainViewModel(
     private val downloadProvider: DownloadProvider,
@@ -57,64 +69,73 @@ class MainViewModel(
     
     private val _dataState = MutableStateFlow(MainDataState())
     val viewState: StateFlow<MainViewState> = _dataState
-        .map { it.toViewState() }
+        .map { dataState ->
+            MainViewState(
+                downloadState = dataState.downloadState,
+                isEngineReady = dataState.isEngineReady,
+                messages = dataState.messages.map { dataStateMessage ->
+                    MainViewState.Message(
+                        id = dataStateMessage.id,
+                        role = dataStateMessage.role,
+                        content = dataStateMessage.content,
+                        isLoading = dataStateMessage.isLoading,
+                    )
+                },
+                isGenerating = dataState.generatingMessage != null,
+            )
+        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = _dataState.value.toViewState()
+            initialValue = MainViewState(
+                downloadState = DownloadState.NotStarted,
+                isEngineReady = false,
+                messages = emptyList(),
+                isGenerating = false
+            )
         )
 
     init {
         checkAndDownloadModel()
-        viewModelScope.launch {
-            _dataState.update { it.copy(greeting = getString(Res.string.loading)) }
-        }
     }
 
     private fun checkAndDownloadModel() {
         viewModelScope.launch(context = Dispatchers.IO) {
             try {
                 val downloadFolder = downloadProvider.getDownloadFolder()
-                val modelPath = "$downloadFolder/$E2B_MODEL_FILE_NAME".toPath()
+                val currModel = E4B_MODEL_FILE_NAME
+                val modelToDelete = E2B_MODEL_FILE_NAME
+                val oldModelPath = "$downloadFolder/$modelToDelete".toPath()
+                val newModelPath = "$downloadFolder/$currModel".toPath()
                 val fileSystem = FileSystem.SYSTEM
 
-                if (fileSystem.exists(modelPath)) {
-                    _dataState.value = _dataState.value.copy(
-                        greeting = getString(Res.string.model_found),
-                        downloadState = DownloadState.Completed
-                    )
-                    // Initialize engine with the existing model
-                    initializeEngine(modelPath.toString())
+                if (fileSystem.exists(oldModelPath)) {
+                    _dataState.update { it.copy(downloadState = DownloadState.NotStarted) }
+                    fileSystem.delete(oldModelPath)
+                }
+                if (fileSystem.exists(newModelPath)) {
+                    _dataState.update { it.copy(downloadState = DownloadState.Completed) }
+                    initializeEngine(newModelPath.toString())
                 } else {
-                    _dataState.value = _dataState.value.copy(
-                        greeting = getString(Res.string.downloading_model),
-                        downloadState = DownloadState.NotStarted
-                    )
+                    _dataState.update { it.copy(downloadState = DownloadState.NotStarted) }
                     
-                    val downloadUrl = "$MODEL_DOWNLOAD_URL/$E2B_MODEL_FILE_NAME"
+                    val downloadUrl = "$MODEL_DOWNLOAD_URL/$currModel"
                     downloadFile(
                         client = httpClient,
                         fileUrl = downloadUrl,
-                        outputPath = modelPath,
+                        outputPath = newModelPath,
                         onProgressUpdate = { downloadState ->
-                            _dataState.value = _dataState.value.copy(
-                                downloadState = downloadState,
-                                greeting = downloadState.getMessage()
-                            )
+                            _dataState.update { it.copy(downloadState = downloadState) }
                         }
                     )
                     
-                    // After download completes, initialize engine
                     if (_dataState.value.downloadState is DownloadState.Completed) {
-                        initializeEngine(modelPath.toString())
+                        initializeEngine(newModelPath.toString())
                     }
                 }
             } catch (e: Exception) {
-                val errorMessage = e.messageOrUnknown()
-                _dataState.value = _dataState.value.copy(
-                    greeting = getString(Res.string.error_prefix, errorMessage),
-                    downloadState = DownloadState.Error(errorMessage)
-                )
+                val errorMessage = e.message ?: "Unknown error"
+                _dataState.update { it.copy(downloadState = DownloadState.Error(errorMessage)) }
             }
         }
     }
@@ -122,16 +143,10 @@ class MainViewModel(
     private fun initializeEngine(modelPath: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val backendsToTry = listOf(Backend.GPU, Backend.CPU)
-            
-            // Load system prompt from file
             val systemPrompt = Res.readBytes("files/system_prompt.md").decodeToString()
             
             for (backend in backendsToTry) {
                 try {
-                    _dataState.value = _dataState.value.copy(
-                        greeting = getString(Res.string.initializing_engine, backend.name)
-                    )
-                    
                     engine = Engine(
                         EngineConfig(
                             modelPath = modelPath,
@@ -139,47 +154,27 @@ class MainViewModel(
                         )
                     ).apply { initialize() }
                     
-                    // Create conversation with config including system prompt
                     val conversationConfig = ConversationConfig(
                         samplerConfig = SamplerConfig(
                             topK = 40,
                             topP = 0.95,
-                            temperature = 0.8
+                            temperature = 1.0,
                         ),
                         systemPrompt = systemPrompt,
-                        tools = listOf(ToolDefinition.SampleWeatherSearchTool()),
-                        prefillMessages = listOf(
-                            Message.user(
-                                "Please address me as big john for the rest of the conversation."
-                            ),
-                            Message.assistant(text = "You got it, big john.")
-                        )
+                        tools = listOf(ToolDefinition.WebSearchTool())
                     )
                     
                     conversation = engine?.createConversation(conversationConfig)
-
-                    _dataState.value = _dataState.value.copy(
-                        greeting = getString(Res.string.ready_engine, backend.name)
-                    )
-                    
-                    // Send a test message
-                    sendMessage(getString(Res.string.test_prompt))
-                    
-                    return@launch // Success, exit the loop
+                    _dataState.update { it.copy(isEngineReady = true) }
+                    return@launch
                 } catch (e: Exception) {
                     try {
                         engine?.close()
-                    } catch (closeException: Exception) {
-                        // Ignore
-                    }
+                    } catch (_: Exception) {}
                     
-                    // If this was the last backend to try, throw the exception
                     if (backend == backendsToTry.last()) {
-                        val errorMessage = e.messageOrUnknown()
-                        _dataState.value = _dataState.value.copy(
-                            greeting = getString(Res.string.error_prefix, errorMessage),
-                            downloadState = DownloadState.Error(errorMessage)
-                        )
+                        val errorMessage = e.message ?: "Unknown error"
+                        _dataState.update { it.copy(downloadState = DownloadState.Error(errorMessage)) }
                         return@launch
                     }
                 }
@@ -187,53 +182,61 @@ class MainViewModel(
         }
     }
     
-    private suspend fun sendMessage(prompt: String) {
-        try {
-            conversation?.sendMessageAsync(
-                prompt = prompt,
-                onToken = { partialResponse ->
-                    _dataState.value = _dataState.value.copy(greeting = partialResponse)
-                },
-                onDone = { fullResponse ->
-                    if (fullResponse.isEmpty()) {
-                        viewModelScope.launch {
-                            _dataState.value = _dataState.value.copy(
-                                greeting = getString(Res.string.no_response)
+    fun sendMessage(prompt: String) {
+        if (prompt.isBlank() || _dataState.value.generatingMessage != null) return
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = Clock.System.now().toEpochMilliseconds()
+            val userMessage = ChatMessage(id = id, role = Role.USER, content = prompt)
+            val generatingMessage = ChatMessage(
+                id = id,
+                role = Role.ASSISTANT,
+                content = "",
+                isLoading = true,
+            )
+            
+            _dataState.update { state ->
+                state.copy(
+                    messages = state.messages + userMessage,
+                    generatingMessage = generatingMessage,
+                )
+            }
+
+            _dataState.first { it.isEngineReady }
+            try {
+                conversation?.sendMessageAsync(
+                    prompt = prompt,
+                    onToken = { partialResponse ->
+                        _dataState.update { it.copyWithNewMessage(content = partialResponse) }
+                    },
+                    onDone = { fullResponse ->
+                        _dataState.update { state ->
+                            state.copyWithNewMessage(
+                                content = fullResponse.ifEmpty { "No response" },
+                                isFinal = true,
                             )
                         }
-                    } else {
-                        _dataState.value = _dataState.value.copy(greeting = fullResponse)
+                    },
+                    onError = { e ->
+                        _dataState.update { state ->
+                            state.copyWithNewMessage(
+                                content = "Error: ${e.message}",
+                                isFinal = true,
+                            )
+                        }
                     }
-                },
-                onError = { throwable ->
-                    viewModelScope.launch {
-                        _dataState.value = _dataState.value.copy(
-                            greeting = getString(Res.string.error_prefix, throwable.messageOrUnknown())
-                        )
-                    }
+                )
+            } catch (e: Exception) {
+                _dataState.update { state ->
+                    state.copyWithNewMessage(content = "Error: ${e.message}", isFinal = true)
                 }
-            )
-        } catch (e: Exception) {
-            _dataState.value = _dataState.value.copy(
-                greeting = getString(Res.string.error_prefix, e.messageOrUnknown())
-            )
+            }
         }
     }
     
     override fun onCleared() {
         super.onCleared()
-        try {
-            conversation?.close()
-        } catch (e: Exception) {
-            // Ignore
-        }
-        try {
-            engine?.close()
-        } catch (e: Exception) {
-            // Ignore
-        }
+        try { conversation?.close() } catch (_: Exception) {}
+        try { engine?.close() } catch (_: Exception) {}
     }
-
-    private suspend fun Throwable.messageOrUnknown(): String =
-        message ?: getString(Res.string.unknown_error)
 }

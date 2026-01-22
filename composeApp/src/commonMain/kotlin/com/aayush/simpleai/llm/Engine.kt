@@ -23,7 +23,7 @@ data class EngineConfig(
     val backend: String = Backend.GPU.value,
     val visionBackend: String? = null,
     val audioBackend: String? = null,
-    val maxNumTokens: Int = 4096,
+    val maxNumTokens: Int = 32768,
     val cacheDir: String? = null,
     val enableBenchmark: Boolean = false
 )

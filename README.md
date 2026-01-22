@@ -9,6 +9,8 @@ Before building the app, you have to run the build scripts in litertlmBuildScrip
 
 I really have no clue how iOS stuff works but managed to hack together a script to build a framework for the ios app as well. This is lower level and is communicated with through C APIs, all the tool processing code is just on top of that. I've also patched in support for prefilling messages, which for whatever reason is excluded.
 
+One major downside to this is that constrained decoding is lost. Doesn't seem to be an issue yet, but if people start having issues I'll go back to trying to extend the jni.
+
 ## Development
 
 I mean I'm not even done yet but in general the tools are defined in ToolDefinition.kt, and the system prompt is in system_prompt.md.

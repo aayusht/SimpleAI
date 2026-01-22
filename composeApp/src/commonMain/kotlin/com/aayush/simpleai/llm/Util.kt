@@ -3,6 +3,8 @@ package com.aayush.simpleai.llm
 
 private const val TOOL_CODE_FENCE_START = "```tool_code"
 private const val TOOL_CODE_FENCE_END = "```"
+private const val GEMMA3_START_OF_TURN = "<start_of_turn>"
+private const val GEMMA3_END_OF_TURN = "<end_of_turn>"
 
 private fun suffixPrefixOverlap(a: String, b: String): Int {
     if (a.isEmpty() || b.isEmpty()) return 0
@@ -92,41 +94,29 @@ internal fun parsePythonStyleArguments(argsString: String): Map<String, Any?> {
 
 internal fun renderFullPrompt(
     systemPrompt: String?,
-    toolsJson: String?,
+    toolRegistry: ToolRegistry,
     messages: List<Message>,
 ): String {
-    val sb = StringBuilder()
-    if (!systemPrompt.isNullOrBlank()) {
-        sb.append("System: ${systemPrompt.trim()}\n\n")
-    }
-    if (!toolsJson.isNullOrBlank()) {
-        sb.append("""
-            To execute a search, output the following json, with included backticks:
-            ```tool_code
-            print(default_api.function_name(arg1="value1", arg2="value2"))
-            ```
-        """.trimIndent())
-        sb.append("You will receive a response from the tool, and then can answer the " +
-                "question accordingly after receiving context.\n")
-        sb.append("The user is not the one executing the tool, so treat the tool response " +
-                "conversationally as information you found, not information that was " +
-                "provided to you.\n")
-        sb.append("Tools: $toolsJson\n\n")
-    }
-    sb.append(renderMessages(messages))
-    if (messages.isEmpty() || messages.last().role != Role.ASSISTANT) {
-        sb.append("Assistant: ")
-    }
-    return sb.toString()
+    val toolsJson = toolRegistry.getOpenApiToolsJson()
+    return renderGemma3Turns(
+        systemPrompt = systemPrompt,
+        toolRegistry = toolRegistry,
+        toolsJson = toolsJson,
+        messages = messages,
+        includeInstructionBlock = true,
+    )
 }
 
 internal fun renderIncrementalPrompt(newMessages: List<Message>): String {
-    val sb = StringBuilder()
-    sb.append(renderMessages(newMessages))
-    if (newMessages.isEmpty() || newMessages.last().role != Role.ASSISTANT) {
-        sb.append("Assistant: ")
-    }
-    return sb.toString()
+    // Keep incremental prompts minimal, but still in Gemma3 turn format.
+    // (No system/instruction splice here; the session is already prefixed.)
+    return renderGemma3Turns(
+        systemPrompt = null,
+        toolRegistry = ToolRegistry(emptyList()),
+        toolsJson = "[]",
+        messages = newMessages,
+        includeInstructionBlock = false,
+    )
 }
 
 private  fun buildToolResponseJson(responses: List<ToolResponse>): String {
@@ -139,16 +129,109 @@ private  fun buildToolResponseJson(responses: List<ToolResponse>): String {
     return "[$items]"
 }
 
-private fun renderMessages(messages: List<Message>): String {
+private fun renderGemma3Turns(
+    systemPrompt: String?,
+    toolRegistry: ToolRegistry,
+    toolsJson: String,
+    messages: List<Message>,
+    includeInstructionBlock: Boolean,
+): String {
     val sb = StringBuilder()
-    for (message in messages) {
-        val prefix = message.role.prefix
-        val content = when (message.role) {
-            Role.TOOL -> buildToolResponseJson(message.toolResponses)
-            else -> message.text
-        }
-        sb.append("$prefix: $content\n")
+
+    // Gemma3-style system splicing:
+    // - If the first message is a system message, splice it into the first user turn.
+    // - Also splice `systemPrompt` (ConversationConfig.systemPrompt) into the first user turn.
+    var loopMessages = messages
+    val prefixParts = mutableListOf<String>()
+
+    if (loopMessages.isNotEmpty() && loopMessages.first().role == Role.SYSTEM) {
+        val sys = loopMessages.first().text.trim()
+        if (sys.isNotEmpty()) prefixParts.add("System: $sys")
+        loopMessages = loopMessages.drop(1)
     }
+
+    if (!systemPrompt.isNullOrBlank()) {
+        prefixParts.add("System: ${systemPrompt.trim()}")
+    }
+
+    if (includeInstructionBlock && toolsJson != "[]") {
+        val instructions = buildString {
+            append("========= START SYSTEM INSTRUCTIONS =========\n\n")
+            append(
+                """
+                If and only if you need more info to answer the user, to execute a tool, output the following json, with included backticks and no preceding text:
+                ```tool_code
+                print(default_api.web_search(query="example query"))
+                ```
+                """.trimIndent()
+            )
+            append("\n")
+            append(
+                "You will receive a response from the tool, and then can answer the " +
+                    "question accordingly after receiving context.\n"
+            )
+            append(
+                "Don't make tool calls if information isn't required! eg if they're just saying hi or thanking you or asking about very simple facts\n"
+            )
+            append(
+                "I repeat, only use tool calls when the immediately prior user message needs factual context. It's likely that if you've already finished replying to a message, a tool call is not likely.\n"
+            )
+            append("Tools spec: $toolsJson\n\n")
+            append("Example invocations: \n\n")
+            for (tool in toolRegistry.toolList) {
+                append("default_api.${tool.name}(${tool.pyArgsString})\n\n")
+            }
+            append("========= END SYSTEM INSTRUCTIONS =========")
+        }
+        prefixParts.add(instructions)
+    }
+
+    val firstUserPrefix = prefixParts.joinToString(separator = "\n\n").trim()
+
+    fun appendTurn(role: String, content: String) {
+        sb.append(GEMMA3_START_OF_TURN).append(role).append("\n")
+        if (content.isNotEmpty()) sb.append(content)
+        sb.append(GEMMA3_END_OF_TURN).append("\n")
+    }
+
+    for ((idx, message) in loopMessages.withIndex()) {
+        val isFirst = idx == 0
+        when (message.role) {
+            Role.USER -> {
+                val base = "User: ${message.text}"
+                val content =
+                    if (isFirst && firstUserPrefix.isNotEmpty()) {
+                        firstUserPrefix + "\n\n" + base
+                    } else {
+                        base
+                    }
+                appendTurn(role = "user", content = content.trimEnd())
+            }
+
+            Role.ASSISTANT -> {
+                appendTurn(role = "model", content = ("Assistant: ${message.text}").trimEnd())
+            }
+
+            Role.TOOL -> {
+                val toolJson = buildToolResponseJson(message.toolResponses)
+                appendTurn(role = "user", content = ("Tool: $toolJson").trimEnd())
+            }
+
+            Role.SYSTEM -> {
+                // Non-leading system messages are uncommon in this app.
+                // Preserve the prior "System: ..." transcript style but wrap in a user turn.
+                appendTurn(role = "user", content = ("System: ${message.text}").trimEnd())
+            }
+        }
+    }
+
+    // Generation prompt. Keep your previous "Assistant: " prefix since your tool-calling
+    // instructions and parsing assume this transcript style.
+    if (loopMessages.isEmpty() || loopMessages.last().role != Role.ASSISTANT) {
+        sb.append(GEMMA3_START_OF_TURN).append("model\n")
+        sb.append("Assistant: ")
+    }
+
     return sb.toString()
 }
 
