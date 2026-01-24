@@ -16,22 +16,22 @@ import okio.buffer
 import okio.use
 import kotlin.time.Clock
 
-sealed class DownloadState() {
-    data object NotStarted : DownloadState()
+sealed class DownloadState(val isFinal: Boolean) {
+    data object NotStarted : DownloadState(isFinal = false)
     data class Downloading(
         val receivedBytes: Long,
         val totalBytes: Long,
         val bytesPerSecond: Long = 0,
         val remainingMs: Long = 0
-    ) : DownloadState() {
+    ) : DownloadState(isFinal = false) {
 
         val totalMB = totalBytes / 1024 / 1024
         val receivedMB = receivedBytes / 1024 / 1024
         val progress: Float
             get() = if (totalBytes > 0) receivedBytes.toFloat() / totalBytes else 0f
     }
-    data object Completed : DownloadState()
-    data class Error(val message: String) : DownloadState()
+    data object Completed : DownloadState(isFinal = true)
+    data class Error(val message: String) : DownloadState(isFinal = true)
 }
 
 /**

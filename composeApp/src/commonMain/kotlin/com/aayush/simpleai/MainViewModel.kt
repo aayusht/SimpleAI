@@ -39,9 +39,7 @@ internal data class ChatMessage(
     val role: Role,
     val content: String,
     val isLoading: Boolean = false
-) {
-    fun copyWithContent(content: String): ChatMessage = copy(content = content, isLoading = false)
-}
+)
 
 private data class MainDataState(
     val downloadState: DownloadState = DownloadState.NotStarted,
@@ -51,7 +49,7 @@ private data class MainDataState(
 ) {
     fun copyWithNewMessage(content: String, isFinal: Boolean = false): MainDataState {
         val generatingMessage = generatingMessage ?: return this
-        val newMessage = generatingMessage.copy(content = content, isLoading = false)
+        val newMessage = generatingMessage.copy(content = content, isLoading = content.isBlank())
         if (isFinal) {
             return copy(generatingMessage = null, messages = messages + newMessage)
         }
@@ -73,14 +71,16 @@ class MainViewModel(
             MainViewState(
                 downloadState = dataState.downloadState,
                 isEngineReady = dataState.isEngineReady,
-                messages = dataState.messages.map { dataStateMessage ->
-                    MainViewState.Message(
-                        id = dataStateMessage.id,
-                        role = dataStateMessage.role,
-                        content = dataStateMessage.content,
-                        isLoading = dataStateMessage.isLoading,
-                    )
-                },
+                messages = (dataState.messages + dataState.generatingMessage)
+                    .filterNotNull()
+                    .map { dataStateMessage ->
+                        MainViewState.Message(
+                            id = dataStateMessage.id,
+                            role = dataStateMessage.role,
+                            content = dataStateMessage.content,
+                            isLoading = dataStateMessage.isLoading,
+                        )
+                    },
                 isGenerating = dataState.generatingMessage != null,
             )
         }
