@@ -14,5 +14,13 @@
     <string name="send_button_description">Send</string>
     <string name="no_response">No response</string>
     <string name="loading">Loading...</string>
-    <string name="test_prompt">Hi what\'s the weather today in San Francisco?</string>
+    <string name="welcome_title">Welcome to Simple AI</string>
+    <string name="welcome_description">
+        Simple AI is a fully local, on device AI based on Gemma 3n. By running completely on device,
+        Simple AI usage has zero environmental impact and maximum privacy.
+    </string>
+    <string name="welcome_addendum_tools">
+        Web search through DuckDuckGo is in beta.
+        Aside from search queries, nothing leaves your phone.
+    </string>
 </resources>

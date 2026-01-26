@@ -1,5 +1,11 @@
 package com.aayush.simpleai.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -27,11 +33,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.aayush.simpleai.ui.theme.AppTheme
+import com.aayush.simpleai.ui.theme.AppThemePreviewDarkBackground
+import com.aayush.simpleai.ui.theme.backgroundDark
 import com.aayush.simpleai.ui.theme.primaryDark
 import com.aayush.simpleai.ui.theme.primaryLight
 import com.aayush.simpleai.util.AccelerometerData
@@ -258,12 +268,35 @@ private fun DownloadScreenWithPhysics(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Display-sized title
+        // Shimmer animation for the title
+        val infiniteTransition = rememberInfiniteTransition()
+        val shimmerTranslate by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1000f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            )
+        )
+
+        val shimmerColors = listOf(
+            MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+            MaterialTheme.colorScheme.onBackground,
+            MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+        )
+
+        val brush = Brush.linearGradient(
+            colors = shimmerColors,
+            start = Offset(shimmerTranslate - 500f, shimmerTranslate),
+            end = Offset(shimmerTranslate, shimmerTranslate),
+            tileMode = TileMode.Mirror
+        )
+
+        // Display-sized title with shimmer
         Text(
             text = stringResource(resource = Res.string.downloading_model),
-            style = MaterialTheme.typography.displayMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onBackground
+            style = MaterialTheme.typography.displayMedium.copy(brush = brush),
+            textAlign = TextAlign.Center
         )
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -349,15 +382,15 @@ private fun FluidGridCanvas(
 
 @Composable
 @Preview(showBackground = true)
-fun DownloadScreenPreview() {
-    var receivedMB by remember { mutableStateOf(value = 10L) }
-    LaunchedEffect(key1 = Unit) {
-        while (receivedMB < 90) {
-            delay(timeMillis = 1000L)
-            receivedMB += 1
+fun DownloadScreenPreviewDark() {
+    AppThemePreviewDarkBackground {
+        var receivedMB by remember { mutableStateOf(value = 0L) }
+        LaunchedEffect(key1 = Unit) {
+            while (receivedMB < 90) {
+                delay(timeMillis = 1000L)
+                receivedMB += 1
+            }
         }
-    }
-    AppTheme(darkTheme = false) {
         DownloadScreenWithPhysics(
             accelerometerData = AccelerometerData(
                 x = 0f,

@@ -1,11 +1,15 @@
 package com.aayush.simpleai.ui.theme
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 
 private val lightScheme = lightColorScheme(
@@ -254,7 +258,7 @@ val unspecified_scheme = ColorFamily(
 @Composable
 fun AppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable() () -> Unit
+    content: @Composable () -> Unit
 ) {
   val colorScheme = when {
       darkTheme -> darkScheme
@@ -267,4 +271,16 @@ fun AppTheme(
     content = content
   )
 }
+
+@Composable
+fun AppThemePreviewDarkBackground(
+    content: @Composable () -> Unit
+) {
+    AppTheme(darkTheme = true) {
+        Column(modifier = Modifier.background(color = backgroundDark).fillMaxSize()) {
+            content()
+        }
+    }
+}
+
 

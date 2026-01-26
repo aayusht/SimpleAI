@@ -221,15 +221,7 @@ fun ChatScreenPreview() {
         val targetContent = """
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
         """.trimIndent()
-        val targetContentWords = targetContent.split(' ').iterator()
-        val content = remember { mutableStateOf("") }
-        LaunchedEffect(Unit) {
-            delay(timeMillis = 1000)
-            while(targetContentWords.hasNext()) {
-                content.value += targetContentWords.next() + " "
-                delay(timeMillis = 100)
-            }
-        }
+        val content by fakeAiOutput(text = targetContent)
         ChatScreen(
             messages = listOf(
                 MainViewState.Message(
@@ -253,8 +245,8 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i
                 MainViewState.Message(
                     id = 3,
                     role = Role.ASSISTANT,
-                    content = content.value,
-                    isLoading = content.value.isBlank(),
+                    content = content,
+                    isLoading = content.isBlank(),
                 ),
             ),
             isGenerating = true,
