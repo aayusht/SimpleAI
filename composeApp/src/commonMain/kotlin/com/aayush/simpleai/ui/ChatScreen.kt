@@ -1,12 +1,18 @@
 package com.aayush.simpleai.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,8 +36,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -44,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -67,8 +76,61 @@ import kotlin.math.sin
 fun ChatScreen(
     messages: List<MainViewState.MessageViewState>,
     isGenerating: Boolean,
+    onSendMessage: (String) -> Unit,
+) {
+
+
+
+    var showHistory by remember { mutableStateOf(false) }
+    val blurRadius by animateDpAsState(targetValue = if (showHistory) 24.dp else 0.dp)
+
+    Box(modifier = Modifier.fillMaxSize()) {
+
+        Box(modifier = Modifier.fillMaxSize().blur(blurRadius)) {
+            ChatScreenContent(
+                messages = messages,
+                isGenerating = isGenerating,
+                onSendMessage = onSendMessage,
+            )
+
+            IconButton(
+                onClick = { showHistory = true },
+                colors = IconButtonDefaults.iconButtonColors().copy(
+                    containerColor = IconButtonDefaults.iconButtonColors().containerColor,
+                    contentColor = IconButtonDefaults.iconButtonColors().contentColor.copy(alpha = 0.5f),
+                    disabledContainerColor = IconButtonDefaults.iconButtonColors().disabledContainerColor,
+                    disabledContentColor = IconButtonDefaults.iconButtonColors().disabledContentColor.copy(
+                        alpha = 0.5f
+                    ),
+                ),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Menu,
+                    contentDescription = "History",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showHistory,
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            HistoryScreen(onDismiss = { showHistory = false })
+        }
+    }
+}
+
+@Composable
+fun ChatScreenContent(
+    messages: List<MainViewState.MessageViewState>,
+    isGenerating: Boolean,
     onSendMessage: (String) -> Unit
 ) {
+
     var inputText by remember { mutableStateOf(value = "") }
     val listState = rememberLazyListState()
     var wasAtBottom by remember { mutableStateOf(value = true) }
@@ -100,7 +162,7 @@ fun ChatScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
         if (messages.isNotEmpty()) {
             LazyColumn(
                 state = listState,
@@ -171,6 +233,21 @@ fun ChatScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun HistoryScreen(onDismiss: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss
+            )
+    ) {
+        // Empty for now as requested
     }
 }
 
@@ -260,6 +337,17 @@ fun BouncingDots() {
 fun EmptyChatScreenPreview() {
     AppTheme {
         ChatScreen(messages = listOf(), isGenerating = false, onSendMessage = {})
+    }
+}
+
+@Composable
+@Preview(showBackground = true)
+fun EmptyChatScreenWithHistoryPreview() {
+    AppTheme {
+        Box {
+            ChatScreen(messages = listOf(), isGenerating = false, onSendMessage = {})
+            HistoryScreen(onDismiss = {})
+        }
     }
 }
 

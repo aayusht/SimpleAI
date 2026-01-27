@@ -1,6 +1,7 @@
 package com.aayush.simpleai
 
 import androidx.compose.runtime.Immutable
+import com.aayush.simpleai.llm.Message
 import com.aayush.simpleai.llm.Role
 import com.aayush.simpleai.util.DownloadState
 
@@ -62,20 +63,24 @@ data class MainViewState(
         private fun formatOneDecimalPoint(float: Float): String =
             "${float.toInt()}.${(float * 10).toInt() % 10}"
 
-        fun getMessageViewStates(messages: List<ChatMessage>): List<MessageViewState> {
+        private val Message.isToolCallsOnly: Boolean
+            get() = visibleText.isBlank() && fullText.isNotBlank()
+
+
+        fun getMessageViewStates(messages: List<Message>): List<MessageViewState> {
             return messages
                 .filterIndexed { index, item ->
-                    // TODO use this as like a searching state
-                    val isLast = index == messages.lastIndex
-                    val toolsOnly = item.visibleText.isBlank() && item.fullText.isNotBlank()
-                    item.role.isUserVisible && !(isLast && toolsOnly)
+                    // TODO have some "called tools" message
+                    val isNotLast = index != messages.lastIndex
+                    item.role.isUserVisible && !(isNotLast && item.isToolCallsOnly)
                 }
                 .map { dataStateMessage ->
-                    MainViewState.MessageViewState(
+                    MessageViewState(
                         id = dataStateMessage.timestamp,
                         role = dataStateMessage.role,
                         content = dataStateMessage.visibleText.trim(),
-                        isLoading = dataStateMessage.isLoading,
+                        // TODO have some "Searching" tools message or something
+                        isLoading = dataStateMessage.isLoading || dataStateMessage.isToolCallsOnly,
                     )
                 }
         }

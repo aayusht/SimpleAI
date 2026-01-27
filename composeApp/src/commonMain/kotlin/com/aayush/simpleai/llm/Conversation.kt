@@ -291,12 +291,13 @@ class Conversation internal constructor(
                 val functionName = match.groupValues[1]
                 val argsPattern = """"arguments"\s*:\s*\{([^}]*)\}""".toRegex()
                 val argsMatch = argsPattern.find(match.value)
-                val arguments = if (argsMatch != null) {
-                    parseArgumentsFromJson(argsMatch.groupValues[1])
-                } else {
-                    emptyMap()
-                }
-                toolCalls.add(ToolCall(name = functionName, arguments = arguments))
+                toolCalls.add(
+                    ToolCall(
+                        name = functionName,
+                        argumentsString = argsMatch?.groupValues[1],
+                        argumentStyle = ToolCall.ArgumentStyle.JSON,
+                    )
+                )
             }
             return toolCalls
         }
@@ -313,8 +314,13 @@ class Conversation internal constructor(
                 if (funcMatch != null) {
                     val functionName = funcMatch.groupValues[1]
                     val argsString = funcMatch.groupValues[2]
-                    val arguments = parsePythonStyleArguments(argsString)
-                    toolCalls.add(ToolCall(name = functionName, arguments = arguments))
+                    toolCalls.add(
+                        ToolCall(
+                            name = functionName,
+                            argumentsString = argsString,
+                            argumentStyle = ToolCall.ArgumentStyle.PYTHON,
+                        )
+                    )
                 }
             }
             return toolCalls

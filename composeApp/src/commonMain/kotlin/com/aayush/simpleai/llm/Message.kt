@@ -35,11 +35,28 @@ data class Message(
     }
 }
 
+@Serializable
 data class ToolCall(
     val name: String,
+    val argumentStyle: ArgumentStyle,
+    val argumentsString: String? = null,
+) {
     val arguments: Map<String, Any?>
-)
+        get() = when (argumentStyle) {
+            ArgumentStyle.JSON -> argumentsString
+                ?.let { parseArgumentsFromJson(jsonContent = it) } ?: emptyMap()
+            ArgumentStyle.PYTHON -> argumentsString
+                ?.let { parsePythonStyleArguments(argsString = it) } ?: emptyMap()
+        }
 
+    @Serializable
+    enum class ArgumentStyle {
+        JSON,
+        PYTHON
+    }
+}
+
+@Serializable
 data class ToolResponse(
     val name: String,
     val response: String
