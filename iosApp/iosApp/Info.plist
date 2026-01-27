@@ -6,5 +6,10 @@
 	<true/>
 	<key>NSMotionUsageDescription</key>
 	<string>This app uses motion data to animate the download progress visualization.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
 </dict>
 </plist>

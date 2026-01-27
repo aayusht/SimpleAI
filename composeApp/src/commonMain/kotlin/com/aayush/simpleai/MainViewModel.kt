@@ -7,130 +7,166 @@ import com.aayush.simpleai.llm.Conversation
 import com.aayush.simpleai.llm.ConversationConfig
 import com.aayush.simpleai.llm.Engine
 import com.aayush.simpleai.llm.EngineConfig
-import com.aayush.simpleai.llm.Role
+import com.aayush.simpleai.llm.Message
 import com.aayush.simpleai.llm.SamplerConfig
 import com.aayush.simpleai.llm.ToolDefinition
+import com.aayush.simpleai.util.BackgroundDownloadService
+import com.aayush.simpleai.util.DOWNLOAD_URL
 import com.aayush.simpleai.util.DownloadState
 import com.aayush.simpleai.util.DownloadProvider
-import com.aayush.simpleai.util.E2B_MODEL_FILE_NAME
 import com.aayush.simpleai.util.E4B_MODEL_FILE_NAME
-import com.aayush.simpleai.util.MODEL_DOWNLOAD_URL
-import com.aayush.simpleai.util.downloadFile
+import com.aayush.simpleai.util.EXPECTED_MODEL_SIZE_BYTES
+import com.aayush.simpleai.util.DeviceStats
+import com.aayush.simpleai.util.DeviceStatsProvider
+import com.aayush.simpleai.util.REQUIRED_MEMORY_BYTES
+import com.aayush.simpleai.util.REQUIRED_STORAGE_BYTES
+import com.aayush.simpleai.util.createDeviceStatsProvider
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okio.FileSystem
+import okio.Path
 import okio.Path.Companion.toPath
 import okio.SYSTEM
-import org.jetbrains.compose.resources.getString
 import simpleai.composeapp.generated.resources.*
 import kotlin.time.Clock
 
-internal data class ChatMessage(
-    val id: Long,
-    val role: Role,
-    val content: String,
-    val isLoading: Boolean = false
-)
+internal typealias ChatMessage = Message
 
 private data class MainDataState(
-    val downloadState: DownloadState = DownloadState.NotStarted,
+    val downloadState: DownloadState = DownloadState.LoadingFile,
     val isEngineReady: Boolean = false,
     val messages: List<ChatMessage> = emptyList(),
-    val generatingMessage: ChatMessage? = null,
-) {
-    fun copyWithNewMessage(content: String, isFinal: Boolean = false): MainDataState {
-        val generatingMessage = generatingMessage ?: return this
-        val newMessage = generatingMessage.copy(content = content, isLoading = content.isBlank())
-        if (isFinal) {
-            return copy(generatingMessage = null, messages = messages + newMessage)
-        }
-        return copy(generatingMessage = newMessage)
-    }
-}
+    val isGenerating: Boolean = false,
+    val deviceStats: DeviceStats? = null,
+)
 
 class MainViewModel(
     private val downloadProvider: DownloadProvider,
     private val httpClient: HttpClient,
+    private val backgroundDownloadService: BackgroundDownloadService,
 ) : ViewModel() {
     
+    private val deviceStatsProvider: DeviceStatsProvider = createDeviceStatsProvider()
     private var engine: Engine? = null
     private var conversation: Conversation? = null
+        set(value) {
+            field?.close()
+            field = value
+            if (value != null) {
+                observeConversationMessages(value)
+            }
+        }
     
     private val _dataState = MutableStateFlow(MainDataState())
-    val viewState: StateFlow<MainViewState> = _dataState
-        .map { dataState ->
-            MainViewState(
-                downloadState = dataState.downloadState,
-                isEngineReady = dataState.isEngineReady,
-                messages = (dataState.messages + dataState.generatingMessage)
-                    .filterNotNull()
-                    .map { dataStateMessage ->
-                        MainViewState.Message(
-                            id = dataStateMessage.id,
-                            role = dataStateMessage.role,
-                            content = dataStateMessage.content,
-                            isLoading = dataStateMessage.isLoading,
-                        )
-                    },
-                isGenerating = dataState.generatingMessage != null,
-            )
+    
+    // Combine internal state with background download state
+    val viewState: StateFlow<MainViewState> = combine(
+        _dataState,
+        backgroundDownloadService.observeDownloadState()
+    ) { dataState, downloadState ->
+        // Use internal download state if set, otherwise use background service state <- AI slop
+        val effectiveDownloadState = if (dataState.downloadState != DownloadState.LoadingFile) {
+            dataState.downloadState
+        } else {
+            downloadState
         }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = MainViewState(
-                downloadState = DownloadState.NotStarted,
-                isEngineReady = false,
-                messages = emptyList(),
-                isGenerating = false
-            )
+        
+        MainViewState(
+            downloadState = effectiveDownloadState,
+            isEngineReady = dataState.isEngineReady,
+            messages = MainViewState.getMessageViewStates(dataState.messages),
+            isGenerating = dataState.isGenerating,
+            remainingStorage = dataState.deviceStats?.availableStorage,
+            notEnoughMemory = dataState.deviceStats?.maxMemory?.let { actualBytes ->
+                MainViewState.NotEnoughBytes
+                    .from(actualBytes = actualBytes, neededBytes = REQUIRED_MEMORY_BYTES)
+            },
+            notEnoughStorage = dataState.deviceStats?.availableStorage?.let { actualBytes ->
+                MainViewState.NotEnoughBytes
+                    .from(actualBytes = actualBytes, neededBytes = REQUIRED_STORAGE_BYTES)
+            }
         )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = MainViewState(
+            downloadState = DownloadState.NotStarted,
+            isEngineReady = false,
+            messages = emptyList(),
+            isGenerating = false,
+            remainingStorage = null,
+            notEnoughStorage = null,
+            notEnoughMemory = null,
+        )
+    )
 
     init {
-        checkAndDownloadModel()
+        checkModel()
+        updateDeviceStats()
+        observeBackgroundDownloadState()
     }
 
-    private fun checkAndDownloadModel() {
+    private fun observeConversationMessages(conversation: Conversation) {
+        viewModelScope.launch {
+            conversation.history.collect { messages ->
+                _dataState.update { it.copy(messages = messages) }
+            }
+        }
+    }
+    
+    private fun observeBackgroundDownloadState() {
+        viewModelScope.launch {
+            backgroundDownloadService.observeDownloadState()
+                .collect { downloadState ->
+                    // Update internal state to reflect background service state
+                    _dataState.update { it.copy(downloadState = downloadState) }
+                }
+        }
+
+        viewModelScope.launch {
+            _dataState.map { it.downloadState }
+                .distinctUntilChanged()
+                .firstOrNull { it is DownloadState.Completed }
+                ?.let { initializeEngine(getModelFilePath().toString()) }
+        }
+    }
+
+    private fun getModelFilePath(): Path {
+        val downloadFolder = downloadProvider.getDownloadFolder()
+        return "$downloadFolder/$E4B_MODEL_FILE_NAME".toPath()
+    }
+
+    private fun checkModel() {
         viewModelScope.launch(context = Dispatchers.IO) {
             try {
-                val downloadFolder = downloadProvider.getDownloadFolder()
-                val currModel = E4B_MODEL_FILE_NAME
-                val modelToDelete = E2B_MODEL_FILE_NAME
-                val oldModelPath = "$downloadFolder/$modelToDelete".toPath()
-                val newModelPath = "$downloadFolder/$currModel".toPath()
-                val fileSystem = FileSystem.SYSTEM
-
-                if (fileSystem.exists(oldModelPath)) {
-                    _dataState.update { it.copy(downloadState = DownloadState.NotStarted) }
-                    fileSystem.delete(oldModelPath)
-                }
-                if (fileSystem.exists(newModelPath)) {
-                    _dataState.update { it.copy(downloadState = DownloadState.Completed) }
-                    initializeEngine(newModelPath.toString())
-                } else {
-                    _dataState.update { it.copy(downloadState = DownloadState.NotStarted) }
-                    
-                    val downloadUrl = "$MODEL_DOWNLOAD_URL/$currModel"
-                    downloadFile(
-                        client = httpClient,
-                        fileUrl = downloadUrl,
-                        outputPath = newModelPath,
-                        onProgressUpdate = { downloadState ->
-                            _dataState.update { it.copy(downloadState = downloadState) }
-                        }
-                    )
-                    
-                    if (_dataState.value.downloadState is DownloadState.Completed) {
-                        initializeEngine(newModelPath.toString())
+                val modelPath = getModelFilePath()
+                when {
+                    // Check if complete model exists
+                    FileSystem.SYSTEM.exists(modelPath) -> {
+                        _dataState.update { it.copy(downloadState = DownloadState.Completed) }
+                    }
+                    // Check for partial download from previous session
+                    backgroundDownloadService.checkForPartialDownload(
+                        outputPath = modelPath.toString(),
+                        expectedTotalBytes = EXPECTED_MODEL_SIZE_BYTES
+                    ) -> {
+                        // State is updated by checkForPartialDownload
+                    }
+                    // No download in progress
+                    else -> {
+                        _dataState.update { it.copy(downloadState = DownloadState.NotStarted) }
                     }
                 }
             } catch (e: Exception) {
@@ -138,6 +174,24 @@ class MainViewModel(
                 _dataState.update { it.copy(downloadState = DownloadState.Error(errorMessage)) }
             }
         }
+    }
+
+    private fun updateDeviceStats() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val stats = deviceStatsProvider.getDeviceStats()
+            _dataState.update { it.copy(deviceStats = stats) }
+        }
+    }
+
+    fun downloadModel() {
+        backgroundDownloadService.startDownload(
+            url = DOWNLOAD_URL,
+            outputPath = getModelFilePath().toString()
+        )
+    }
+    
+    fun cancelDownload() {
+        backgroundDownloadService.cancelDownload()
     }
     
     private fun initializeEngine(modelPath: String) {
@@ -183,54 +237,18 @@ class MainViewModel(
     }
     
     fun sendMessage(prompt: String) {
-        if (prompt.isBlank() || _dataState.value.generatingMessage != null) return
+        if (prompt.isBlank()) return
         
         viewModelScope.launch(Dispatchers.IO) {
-            val id = Clock.System.now().toEpochMilliseconds()
-            val userMessage = ChatMessage(id = id, role = Role.USER, content = prompt)
-            val generatingMessage = ChatMessage(
-                id = id,
-                role = Role.ASSISTANT,
-                content = "",
-                isLoading = true,
-            )
-            
-            _dataState.update { state ->
-                state.copy(
-                    messages = state.messages + userMessage,
-                    generatingMessage = generatingMessage,
-                )
-            }
 
+            _dataState.update { it.copy(isGenerating = true) }
             _dataState.first { it.isEngineReady }
-            try {
-                conversation?.sendMessageAsync(
-                    prompt = prompt,
-                    onToken = { partialResponse ->
-                        _dataState.update { it.copyWithNewMessage(content = partialResponse) }
-                    },
-                    onDone = { fullResponse ->
-                        _dataState.update { state ->
-                            state.copyWithNewMessage(
-                                content = fullResponse.ifEmpty { "No response" },
-                                isFinal = true,
-                            )
-                        }
-                    },
-                    onError = { e ->
-                        _dataState.update { state ->
-                            state.copyWithNewMessage(
-                                content = "Error: ${e.message}",
-                                isFinal = true,
-                            )
-                        }
-                    }
-                )
-            } catch (e: Exception) {
-                _dataState.update { state ->
-                    state.copyWithNewMessage(content = "Error: ${e.message}", isFinal = true)
-                }
-            }
+            conversation?.sendMessageAsync(
+                prompt = prompt,
+                onToken = {},
+                onDone = { _dataState.update { it.copy(isGenerating = false) } },
+                onError = { _dataState.update { it.copy(isGenerating = false) } }
+            )
         }
     }
     

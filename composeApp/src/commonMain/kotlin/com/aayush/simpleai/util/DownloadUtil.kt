@@ -17,7 +17,11 @@ import okio.use
 import kotlin.time.Clock
 
 sealed class DownloadState(val isFinal: Boolean) {
-    data object NotStarted : DownloadState(isFinal = false)
+
+    data object LoadingFile : DownloadState(isFinal = false)
+    data object NotStarted : DownloadState(isFinal = false) // on welcome screen
+
+    data object Starting : DownloadState(isFinal = false) // on downloading screen
     data class Downloading(
         val receivedBytes: Long,
         val totalBytes: Long,
@@ -75,7 +79,6 @@ suspend fun downloadFile(
             var downloadedBytes = 0L
 
             if (isResuming) {
-                // Content-Range: bytes 21010-47021/47022
                 val totalStr = contentRange.substringAfterLast('/')
                 totalBytes = totalStr.toLongOrNull() ?: totalBytes
                 downloadedBytes = existingBytes

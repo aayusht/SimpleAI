@@ -41,10 +41,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.aayush.simpleai.MainViewState
@@ -53,22 +55,37 @@ import com.aayush.simpleai.ui.theme.AppTheme
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.model.rememberMarkdownState
-import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 import simpleai.composeapp.generated.resources.Res
 import simpleai.composeapp.generated.resources.send_button_description
+import simpleai.composeapp.generated.resources.welcome_title
 import kotlin.math.PI
 import kotlin.math.sin
 
 
 @Composable
 fun ChatScreen(
-    messages: List<MainViewState.Message>,
+    messages: List<MainViewState.MessageViewState>,
     isGenerating: Boolean,
     onSendMessage: (String) -> Unit
 ) {
     var inputText by remember { mutableStateOf(value = "") }
     val listState = rememberLazyListState()
+    var wasAtBottom by remember { mutableStateOf(value = true) }
+
+    // Update wasAtBottom whenever the scroll position changes using snapshotFlow to avoid performance issues
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+            if (lastVisibleItem == null) {
+                true
+            } else {
+                lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 2
+            }
+        }.collect { atBottom ->
+            wasAtBottom = atBottom
+        }
+    }
 
     LaunchedEffect(key1 = messages.size) {
         if (messages.isNotEmpty()) {
@@ -76,18 +93,42 @@ fun ChatScreen(
         }
     }
 
+    // Auto-scroll when generating and was at bottom
+    LaunchedEffect(key1 = messages.lastOrNull()?.markdownContent, key2 = isGenerating) {
+        if (isGenerating && wasAtBottom && messages.isNotEmpty()) {
+            listState.scrollToItem(index = messages.size - 1)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(weight = 1f)
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(space = 8.dp)
-        ) {
-            item { Spacer(modifier = Modifier.height(height = 8.dp)) }
-            items(items = messages, key = { it.key }) { MessageBubble(it) }
-            item { Spacer(modifier = Modifier.height(height = 8.dp)) }
+        if (messages.isNotEmpty()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(weight = 1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(space = 8.dp)
+            ) {
+                item { Spacer(modifier = Modifier.height(height = 8.dp)) }
+                items(items = messages, key = { it.key }) { MessageBubble(it) }
+                item { Spacer(modifier = Modifier.height(height = 8.dp)) }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .weight(weight = 1f)
+                    .padding(start = 8.dp, end = 96.dp)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    textAlign = TextAlign.Start,
+                    text = stringResource(resource = Res.string.welcome_title),
+                    style = MaterialTheme.typography.displayMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
         }
 
         Row(
@@ -134,7 +175,7 @@ fun ChatScreen(
 }
 
 @Composable
-fun MessageBubble(message: MainViewState.Message) {
+fun MessageBubble(message: MainViewState.MessageViewState) {
     val arrangement = if (message.isEndAligned) Arrangement.End else Arrangement.Start
     val clipShape = remember(message.isEndAligned) {
         RoundedCornerShape(
@@ -155,7 +196,7 @@ fun MessageBubble(message: MainViewState.Message) {
                 .clip(clipShape)
                 .background(
                     color = if (message.usePrimaryBackground) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.surfaceVariant
+                    else MaterialTheme.colorScheme.tertiaryContainer
                 )
                 .padding(all = 12.dp)
         ) {
@@ -175,7 +216,7 @@ fun MessageBubble(message: MainViewState.Message) {
                         text = if (message.usePrimaryBackground) {
                             MaterialTheme.colorScheme.onPrimary
                         } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                            MaterialTheme.colorScheme.onTertiaryContainer
                         },
                     ),
                 )
@@ -215,34 +256,42 @@ fun BouncingDots() {
 }
 
 @Composable
-@Preview
+@Preview(showBackground = true)
+fun EmptyChatScreenPreview() {
+    AppTheme {
+        ChatScreen(messages = listOf(), isGenerating = false, onSendMessage = {})
+    }
+}
+
+@Composable
+@Preview(showBackground = true)
 fun ChatScreenPreview() {
-    AppTheme(darkTheme = true) {
+    AppTheme {
         val targetContent = """
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
         """.trimIndent()
         val content by fakeAiOutput(text = targetContent)
         ChatScreen(
             messages = listOf(
-                MainViewState.Message(
+                MainViewState.MessageViewState(
                     id = 0,
                     role = Role.USER,
                     content = "Hey what's up",
                     isLoading = false,
                 ),
-                MainViewState.Message(
+                MainViewState.MessageViewState(
                     id = 1,
                     role = Role.ASSISTANT,
                     content = "It's the [bomb.com](bomb.com) how u doin",
                     isLoading = false,
                 ),
-                MainViewState.Message(
+                MainViewState.MessageViewState(
                     id = 2,
                     role = Role.USER,
                     content = "**cool**",
                     isLoading = false,
                 ),
-                MainViewState.Message(
+                MainViewState.MessageViewState(
                     id = 3,
                     role = Role.ASSISTANT,
                     content = content,

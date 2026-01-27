@@ -12,15 +12,22 @@ import com.aayush.simpleai.util.nativeSessionConfigSetMaxOutputTokens
 import com.aayush.simpleai.util.nativeSessionDelete
 import com.aayush.simpleai.util.nativeSessionGenerateContentStream
 import com.aayush.simpleai.util.nativeSessionRunPrefill
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.collections.plus
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-enum class Role(val prefix: String) {
-    SYSTEM(prefix = "System"),
-    USER(prefix = "User"),
-    ASSISTANT(prefix = "Assistant"),
-    TOOL(prefix = "Tool"),
+enum class Role(val prefix: String, val isUserVisible: Boolean) {
+    SYSTEM(prefix = "System", isUserVisible = false),
+    USER(prefix = "User", isUserVisible = true),
+    ASSISTANT(prefix = "Assistant", isUserVisible = true),
+    TOOL(prefix = "Tool", isUserVisible = false),
 }
 
 class Conversation internal constructor(
@@ -29,10 +36,21 @@ class Conversation internal constructor(
 ) : AutoCloseable {
     private val lock = PlatformLock()
     private val toolRegistry = ToolRegistry(config.tools)
-    private val history = mutableListOf<Message>()
+    private val _history = MutableStateFlow<List<Message>>(listOf())
+
+    private val _generatingMessage = MutableStateFlow<Message?>(null)
     private var sessionPtr: SessionPtr? = null
     private var prefilled = false
     private var isClosed = false
+
+    val history: Flow<List<Message>>
+        get() = combine(_history, _generatingMessage) { history, generatingMessage ->
+            if (generatingMessage != null) {
+                history + generatingMessage
+            } else {
+                history
+            }
+        }
 
     init {
         createSession()
@@ -40,8 +58,6 @@ class Conversation internal constructor(
             prefillHistory(config.prefillMessages)
         }
     }
-
-    fun getHistory(): List<Message> = history.toList()
 
     fun restoreHistory(messages: List<Message>) {
         lock.withLock {
@@ -63,6 +79,7 @@ class Conversation internal constructor(
                 onToken = onToken,
                 toolCallCount = 0
             )
+            commitGeneratingMessage(fullText = response, toolCalls = emptyList())
             onDone(response)
         } catch (e: Throwable) {
             onError(e)
@@ -99,7 +116,7 @@ class Conversation internal constructor(
     private fun resetSession() {
         sessionPtr?.let { nativeSessionDelete(it) }
         sessionPtr = null
-        history.clear()
+        _history.value = emptyList()
         prefilled = false
         createSession()
     }
@@ -114,7 +131,7 @@ class Conversation internal constructor(
         if (prompt.isNotBlank()) {
             val session = sessionPtr ?: error("Session is not initialized.")
             nativeSessionRunPrefill(session, arrayOf(NativeInputData(text = prompt)))
-            history.addAll(messages)
+            _history.update { it + messages }
             prefilled = true
         }
     }
@@ -131,12 +148,13 @@ class Conversation internal constructor(
         }
 
         val prompt = buildPromptForStream(messageToPrefill)
-        history.add(messageToPrefill)
+        _history.update { it + messageToPrefill }
+        updateGeneratingMessage(fullText = "", visibleText = "")
+
         val streamResult = streamDecode(prompt, onToken)
         val toolCalls = parseToolCalls(streamResult.fullText)
 
-        val assistantMessage = Message.assistant(streamResult.fullText, toolCalls)
-        history.add(assistantMessage)
+        commitGeneratingMessage(fullText = streamResult.fullText, toolCalls = toolCalls)
 
         if (toolCalls.isEmpty()) {
             return streamResult.fullText
@@ -158,7 +176,7 @@ class Conversation internal constructor(
 
     private fun buildPromptForStream(message: Message): String {
         val prompt = if (!prefilled) {
-            val messages = history + message
+            val messages = _history.value + message
             renderFullPrompt(
                 systemPrompt = config.systemPrompt,
                 toolRegistry = toolRegistry,
@@ -190,6 +208,10 @@ class Conversation internal constructor(
                         if (visibleDelta.isNotEmpty()) {
                             visibleBuffer.append(visibleDelta)
                             onToken(visibleBuffer.toString())
+                            updateGeneratingMessage(
+                                fullText = fullBuffer.toString(),
+                                visibleText = visibleBuffer.toString(),
+                            )
                         }
                     }
 
@@ -210,6 +232,29 @@ class Conversation internal constructor(
                 )
             }
         }
+    }
+
+    private fun updateGeneratingMessage(
+        fullText: String,
+        visibleText: String,
+    ) {
+        val generatingMessage = _generatingMessage.value ?: Message.assistant(isLoading = true)
+        val newMessage = generatingMessage.copy(
+            fullText = fullText,
+            visibleText = visibleText,
+            isLoading = visibleText.isBlank(),
+        )
+        _generatingMessage.value = newMessage
+    }
+
+    private fun commitGeneratingMessage(
+        fullText: String,
+        toolCalls: List<ToolCall>,
+    ) {
+        val generatingMessage = _generatingMessage.value ?: return
+        val newMessage = generatingMessage.copy(fullText = fullText, isLoading = false)
+        _generatingMessage.value = null
+        _history.update { it + newMessage }
     }
 
     private fun ensureAlive() {

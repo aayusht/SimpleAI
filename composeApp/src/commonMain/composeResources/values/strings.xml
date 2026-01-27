@@ -16,11 +16,19 @@
     <string name="loading">Loading...</string>
     <string name="welcome_title">Welcome to Simple AI</string>
     <string name="welcome_description">
-        Simple AI is a fully local, on device AI based on Gemma 3n. By running completely on device,
-        Simple AI usage has zero environmental impact and maximum privacy.
+        Simple AI is a fully local, on device AI based on Gemma 3n. By running completely on device, Simple AI usage has zero environmental impact and maximum privacy.
+
+        Web search through DuckDuckGo is in beta. Aside from search queries, nothing leaves your phone.
     </string>
-    <string name="welcome_addendum_tools">
-        Web search through DuckDuckGo is in beta.
-        Aside from search queries, nothing leaves your phone.
+    <string name="download_alert_title">Download Model</string>
+    <string name="download_alert_message">This will download the full Gemma 3n E4B model to your device. This will take approximately 5GB of your %1$sGB remaining storage.</string>
+    <string name="download_alert_terms">
+        By proceeding, you agree to the following terms: Gemma is provided under and subject to the Gemma Terms of Use found at <a href='https://ai.google.dev/gemma/terms'>ai.google.dev/gemma/terms</a>. You must not use any of the Gemma Services for the restricted uses set forth in the Gemma Prohibited Use Policy at <a href='https://ai.google.dev/gemma/prohibited_use_policy'>ai.google.dev/gemma/prohibited_use_policy</a>, or in violation of applicable laws and regulations.
     </string>
+    <string name="proceed">Proceed</string>
+    <string name="cancel">Cancel</string>
+    <string name="welcome_continue">Continue to model download</string>
+    <string name="not_enough_memory">Not enough memory. Have %1$s GB, need %2$s GB.</string>
+    <string name="not_enough_storage">Not enough storage. Have %1$s GB, need %2$s GB.</string>
+    <string name="not_enough_memory_and_storage">Not enough memory and storage. Have %1$sGB memory (need %2$s GB) and %3$s GB storage (need %4$s GB).</string>
 </resources>

@@ -8,9 +8,11 @@ import androidx.room.RoomDatabaseConstructor
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.TypeConverters
 import kotlinx.coroutines.flow.Flow
 
 @Database(entities = [ChatHistory::class], version = 1)
+@TypeConverters(Converters::class)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatHistoryDao(): ChatHistoryDao

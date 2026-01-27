@@ -145,7 +145,7 @@ private fun renderGemma3Turns(
     val prefixParts = mutableListOf<String>()
 
     if (loopMessages.isNotEmpty() && loopMessages.first().role == Role.SYSTEM) {
-        val sys = loopMessages.first().text.trim()
+        val sys = loopMessages.first().fullText.trim()
         if (sys.isNotEmpty()) prefixParts.add("System: $sys")
         loopMessages = loopMessages.drop(1)
     }
@@ -159,7 +159,7 @@ private fun renderGemma3Turns(
             append("========= START SYSTEM INSTRUCTIONS =========\n\n")
             append(
                 """
-                If and only if you need more info to answer the user, to execute a tool, output the following json, with included backticks and no preceding text:
+                If and only if you need more info to answer the user, to execute a tool, output the following json, with included backticks:
                 ```tool_code
                 print(default_api.web_search(query="example query"))
                 ```
@@ -198,7 +198,7 @@ private fun renderGemma3Turns(
         val isFirst = idx == 0
         when (message.role) {
             Role.USER -> {
-                val base = "User: ${message.text}"
+                val base = "User: ${message.fullText}"
                 val content =
                     if (isFirst && firstUserPrefix.isNotEmpty()) {
                         firstUserPrefix + "\n\n" + base
@@ -209,7 +209,7 @@ private fun renderGemma3Turns(
             }
 
             Role.ASSISTANT -> {
-                appendTurn(role = "model", content = ("Assistant: ${message.text}").trimEnd())
+                appendTurn(role = "model", content = ("Assistant: ${message.fullText}").trimEnd())
             }
 
             Role.TOOL -> {
@@ -220,7 +220,7 @@ private fun renderGemma3Turns(
             Role.SYSTEM -> {
                 // Non-leading system messages are uncommon in this app.
                 // Preserve the prior "System: ..." transcript style but wrap in a user turn.
-                appendTurn(role = "user", content = ("System: ${message.text}").trimEnd())
+                appendTurn(role = "user", content = ("System: ${message.fullText}").trimEnd())
             }
         }
     }
