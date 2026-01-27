@@ -45,6 +45,10 @@ actual class BackgroundDownloadService {
         }
         return false
     }
+
+    actual fun requestNotificationPermission() {
+        // iOS doesn't strictly need this for background downloads via URLSession
+    }
 }
 
 /**

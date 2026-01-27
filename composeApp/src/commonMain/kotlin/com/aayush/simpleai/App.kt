@@ -85,7 +85,12 @@ fun App() {
                 DownloadState.Completed -> ChatScreen(
                     messages = viewState.messages,
                     isGenerating = viewState.isGenerating,
-                    onSendMessage = { viewModel.sendMessage(prompt = it) }
+                    historyRows = viewState.historyRows,
+                    isNewChat = viewState.isNewChat,
+                    onSendMessage = { viewModel.sendMessage(prompt = it) },
+                    onSelectChat = { viewModel.restoreChat(chatId = it) },
+                    onNewChat = { viewModel.startNewChat() },
+                    onDeleteChat = { viewModel.deleteChat(chatId = it) },
                 )
             }
         }

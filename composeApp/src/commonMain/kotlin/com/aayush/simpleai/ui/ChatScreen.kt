@@ -36,7 +36,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -54,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -61,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import com.aayush.simpleai.MainViewState
 import com.aayush.simpleai.llm.Role
 import com.aayush.simpleai.ui.theme.AppTheme
+import com.aayush.simpleai.ui.theme.backgroundDark
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.model.rememberMarkdownState
@@ -76,11 +83,13 @@ import kotlin.math.sin
 fun ChatScreen(
     messages: List<MainViewState.MessageViewState>,
     isGenerating: Boolean,
+    historyRows: List<MainViewState.HistoryRowState>,
+    isNewChat: Boolean,
     onSendMessage: (String) -> Unit,
+    onSelectChat: (Long) -> Unit,
+    onNewChat: () -> Unit,
+    onDeleteChat: (Long) -> Unit,
 ) {
-
-
-
     var showHistory by remember { mutableStateOf(false) }
     val blurRadius by animateDpAsState(targetValue = if (showHistory) 24.dp else 0.dp)
 
@@ -119,7 +128,19 @@ fun ChatScreen(
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            HistoryScreen(onDismiss = { showHistory = false })
+            HistoryScreen(
+                historyRows = historyRows,
+                isNewChat = isNewChat,
+                onDismiss = { showHistory = false },
+                onSelectChat = { chatId ->
+                    onSelectChat(chatId)
+                    showHistory = false
+                },
+                onNewChat = {
+                    onNewChat()
+                    showHistory = false
+                },
+            )
         }
     }
 }
@@ -237,21 +258,6 @@ fun ChatScreenContent(
 }
 
 @Composable
-fun HistoryScreen(onDismiss: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onDismiss
-            )
-    ) {
-        // Empty for now as requested
-    }
-}
-
-@Composable
 fun MessageBubble(message: MainViewState.MessageViewState) {
     val arrangement = if (message.isEndAligned) Arrangement.End else Arrangement.Start
     val clipShape = remember(message.isEndAligned) {
@@ -280,14 +286,12 @@ fun MessageBubble(message: MainViewState.MessageViewState) {
             if (message.isLoading) {
                 BouncingDots()
             } else {
-//                Text(message.markdownContent.trimEnd())
                 val mdState = rememberMarkdownState(
                     message.markdownContent.trimEnd(),
                     retainState = true, // keeps old render while new parse runs
                 )
                 Markdown(
                     markdownState = mdState,
-//                    content = message.markdownContent,
                     modifier = Modifier.wrapContentSize(),
                     colors = markdownColor(
                         text = if (message.usePrimaryBackground) {
@@ -336,18 +340,16 @@ fun BouncingDots() {
 @Preview(showBackground = true)
 fun EmptyChatScreenPreview() {
     AppTheme {
-        ChatScreen(messages = listOf(), isGenerating = false, onSendMessage = {})
-    }
-}
-
-@Composable
-@Preview(showBackground = true)
-fun EmptyChatScreenWithHistoryPreview() {
-    AppTheme {
-        Box {
-            ChatScreen(messages = listOf(), isGenerating = false, onSendMessage = {})
-            HistoryScreen(onDismiss = {})
-        }
+        ChatScreen(
+            messages = listOf(),
+            isGenerating = false,
+            historyRows = emptyList(),
+            isNewChat = true,
+            onSendMessage = {},
+            onSelectChat = {},
+            onNewChat = {},
+            onDeleteChat = {},
+        )
     }
 }
 
@@ -387,7 +389,12 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i
                 ),
             ),
             isGenerating = true,
+            historyRows = emptyList(),
+            isNewChat = true,
             onSendMessage = { },
+            onSelectChat = {},
+            onNewChat = {},
+            onDeleteChat = {},
         )
     }
 }

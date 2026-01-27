@@ -1,7 +1,13 @@
 package com.aayush.simpleai.util
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.aayush.simpleai.MainActivity
 import com.aayush.simpleai.service.DownloadForegroundService
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -43,5 +49,24 @@ actual class BackgroundDownloadService(private val context: Context) {
             return true
         }
         return false
+    }
+
+    actual fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                val activity = context as? MainActivity
+                if (activity != null) {
+                    ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                        101
+                    )
+                }
+            }
+        }
     }
 }

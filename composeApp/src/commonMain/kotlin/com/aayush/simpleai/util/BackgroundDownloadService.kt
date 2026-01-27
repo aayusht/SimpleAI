@@ -30,4 +30,10 @@ expect class BackgroundDownloadService {
      * Returns true if a partial download was detected.
      */
     fun checkForPartialDownload(outputPath: String, expectedTotalBytes: Long): Boolean
+
+    /**
+     * Requests notification permissions on platforms that require it (like Android 13+).
+     * This is needed for the foreground service to show progress.
+     */
+    fun requestNotificationPermission()
 }

@@ -23,13 +23,24 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
     override fun initialize(): AppDatabase
 }
 
+expect fun getDatabaseBuilder(): RoomDatabase.Builder<AppDatabase>
+
 @Dao
 interface ChatHistoryDao {
     @Insert
-    suspend fun insert(chatHistory: ChatHistory)
+    suspend fun insert(chatHistory: ChatHistory): Long
+
+    @Query("UPDATE ChatHistory SET messages = :messages, timestamp = :timestamp WHERE id = :id")
+    suspend fun update(id: Long, messages: String, timestamp: Long)
 
     @Query("SELECT * FROM ChatHistory ORDER BY timestamp DESC")
     fun getAll(): Flow<List<ChatHistory>>
+
+    @Query("SELECT * FROM ChatHistory WHERE id = :id")
+    suspend fun getById(id: Long): ChatHistory?
+
+    @Query("DELETE FROM ChatHistory WHERE id = :id")
+    suspend fun deleteById(id: Long)
 
     @Query("DELETE FROM ChatHistory")
     suspend fun deleteAll()

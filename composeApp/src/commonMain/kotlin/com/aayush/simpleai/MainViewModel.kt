@@ -2,12 +2,15 @@ package com.aayush.simpleai
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aayush.simpleai.db.ChatHistory
+import com.aayush.simpleai.db.ChatHistoryDao
 import com.aayush.simpleai.llm.Backend
 import com.aayush.simpleai.llm.Conversation
 import com.aayush.simpleai.llm.ConversationConfig
 import com.aayush.simpleai.llm.Engine
 import com.aayush.simpleai.llm.EngineConfig
 import com.aayush.simpleai.llm.Message
+import com.aayush.simpleai.llm.Role
 import com.aayush.simpleai.llm.SamplerConfig
 import com.aayush.simpleai.llm.ToolDefinition
 import com.aayush.simpleai.util.BackgroundDownloadService
@@ -24,6 +27,7 @@ import com.aayush.simpleai.util.createDeviceStatsProvider
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,12 +54,15 @@ private data class MainDataState(
     val messages: List<ChatMessage> = emptyList(),
     val isGenerating: Boolean = false,
     val deviceStats: DeviceStats? = null,
+    val activeChatId: Long? = null,
+    val chatHistoryList: List<ChatHistory> = emptyList(),
 )
 
 class MainViewModel(
     private val downloadProvider: DownloadProvider,
     private val httpClient: HttpClient,
     private val backgroundDownloadService: BackgroundDownloadService,
+    private val chatHistoryDao: ChatHistoryDao,
 ) : ViewModel() {
     
     private val deviceStatsProvider: DeviceStatsProvider = createDeviceStatsProvider()
@@ -66,25 +73,18 @@ class MainViewModel(
             field = value
             if (value != null) {
                 observeConversationMessages(value)
+                observeCompletedMessagesForDb(value)
             }
         }
     
     private val _dataState = MutableStateFlow(MainDataState())
+    private var completedMessagesObserverJob: Job? = null
     
-    // Combine internal state with background download state
-    val viewState: StateFlow<MainViewState> = combine(
-        _dataState,
-        backgroundDownloadService.observeDownloadState()
-    ) { dataState, downloadState ->
-        // Use internal download state if set, otherwise use background service state <- AI slop
-        val effectiveDownloadState = if (dataState.downloadState != DownloadState.LoadingFile) {
-            dataState.downloadState
-        } else {
-            downloadState
-        }
+    // Combine internal state with background download state and chat history
+    val viewState: StateFlow<MainViewState> = _dataState.map { dataState ->
         
         MainViewState(
-            downloadState = effectiveDownloadState,
+            downloadState = dataState.downloadState,
             isEngineReady = dataState.isEngineReady,
             messages = MainViewState.getMessageViewStates(dataState.messages),
             isGenerating = dataState.isGenerating,
@@ -96,7 +96,11 @@ class MainViewModel(
             notEnoughStorage = dataState.deviceStats?.availableStorage?.let { actualBytes ->
                 MainViewState.NotEnoughBytes
                     .from(actualBytes = actualBytes, neededBytes = REQUIRED_STORAGE_BYTES)
-            }
+            },
+            historyRows = dataState.chatHistoryList.map { chatHistory ->
+                MainViewState.HistoryRowState.from(chatHistory, dataState.activeChatId)
+            },
+            isNewChat = dataState.activeChatId == null,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -109,6 +113,8 @@ class MainViewModel(
             remainingStorage = null,
             notEnoughStorage = null,
             notEnoughMemory = null,
+            historyRows = emptyList(),
+            isNewChat = true,
         )
     )
 
@@ -116,12 +122,104 @@ class MainViewModel(
         checkModel()
         updateDeviceStats()
         observeBackgroundDownloadState()
+        observeChatHistoryList()
     }
 
     private fun observeConversationMessages(conversation: Conversation) {
         viewModelScope.launch {
             conversation.history.collect { messages ->
                 _dataState.update { it.copy(messages = messages) }
+            }
+        }
+    }
+
+    /**
+     * Observes completed messages from the conversation and streams them to Room DB.
+     * Only saves after the first assistant message is sent (to avoid saving empty chats).
+     */
+    private fun observeCompletedMessagesForDb(conversation: Conversation) {
+        completedMessagesObserverJob?.cancel()
+        completedMessagesObserverJob = viewModelScope.launch(Dispatchers.IO) {
+            conversation.completedMessagesHistory.collect { messages ->
+                // Only save if there's at least one assistant message
+                val hasAssistantMessage = messages.any { it.role == Role.ASSISTANT }
+                if (messages.isNotEmpty() && hasAssistantMessage) {
+                    saveMessagesToDb(messages)
+                }
+            }
+        }
+    }
+
+    private suspend fun saveMessagesToDb(messages: List<Message>) {
+        val currentChatId = _dataState.value.activeChatId
+        if (currentChatId != null) {
+            // Update existing chat
+            val timestamp = messages.firstOrNull()?.timestamp ?: 0L
+            chatHistoryDao.update(
+                id = currentChatId,
+                messages = ChatHistory.encodeMessages(messages),
+                timestamp = timestamp
+            )
+        } else {
+            // Create new chat
+            val chatHistory = ChatHistory.from(messages)
+            val newId = chatHistoryDao.insert(chatHistory)
+            _dataState.update { it.copy(activeChatId = newId) }
+        }
+    }
+
+    private fun observeChatHistoryList() {
+        viewModelScope.launch {
+            chatHistoryDao.getAll()
+                .distinctUntilChanged()
+                .collect { historyList ->
+                    _dataState.update { it.copy(chatHistoryList = historyList) }
+                }
+        }
+    }
+
+    /**
+     * Restores a chat from history by its ID.
+     */
+    fun restoreChat(chatId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val chatHistory = chatHistoryDao.getById(chatId) ?: return@launch
+            _dataState.update { it.copy(activeChatId = chatId) }
+            conversation?.restoreHistory(chatHistory.messages)
+        }
+    }
+
+    /**
+     * Starts a new chat, clearing the current conversation.
+     */
+    fun startNewChat() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _dataState.update { it.copy(activeChatId = null, messages = emptyList()) }
+            // Reset the conversation by creating a new one with the same config
+            val currentEngine = engine ?: return@launch
+            val systemPrompt = Res.readBytes("files/system_prompt.md").decodeToString()
+            val conversationConfig = ConversationConfig(
+                samplerConfig = SamplerConfig(
+                    topK = 40,
+                    topP = 0.95,
+                    temperature = 1.0,
+                ),
+                systemPrompt = systemPrompt,
+                tools = listOf(ToolDefinition.WebSearchTool())
+            )
+            conversation = currentEngine.createConversation(conversationConfig)
+        }
+    }
+
+    /**
+     * Deletes a chat from history.
+     */
+    fun deleteChat(chatId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            chatHistoryDao.deleteById(chatId)
+            // If we deleted the active chat, start a new one
+            if (_dataState.value.activeChatId == chatId) {
+                startNewChat()
             }
         }
     }
@@ -184,6 +282,7 @@ class MainViewModel(
     }
 
     fun downloadModel() {
+        backgroundDownloadService.requestNotificationPermission()
         backgroundDownloadService.startDownload(
             url = DOWNLOAD_URL,
             outputPath = getModelFilePath().toString()

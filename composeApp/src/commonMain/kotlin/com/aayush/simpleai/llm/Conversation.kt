@@ -43,6 +43,9 @@ class Conversation internal constructor(
     private var prefilled = false
     private var isClosed = false
 
+    val completedMessagesHistory: StateFlow<List<Message>>
+        get() = _history.asStateFlow()
+
     val history: Flow<List<Message>>
         get() = combine(_history, _generatingMessage) { history, generatingMessage ->
             if (generatingMessage != null) {

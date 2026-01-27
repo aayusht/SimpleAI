@@ -61,6 +61,7 @@ kotlin {
                 "-framework", "LiteRtLm",
                 "-framework", "GemmaModelConstraintProvider"
             )
+            linkerOpts.add("-lsqlite3")
         }
     }
     
