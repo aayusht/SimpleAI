@@ -21,7 +21,7 @@
         Web search through DuckDuckGo is in beta. Aside from search queries, nothing leaves your phone.
     </string>
     <string name="download_alert_title">Download Model</string>
-    <string name="download_alert_message">This will download the full Gemma 3n E4B model to your device. This will take approximately 5GB of your %1$sGB remaining storage.</string>
+    <string name="download_alert_message">This will download the full Gemma 3n E4B model to your device. This will take approximately 8GB of your %1$sGB remaining storage.</string>
     <string name="download_alert_terms">
         By proceeding, you agree to the following terms: Gemma is provided under and subject to the Gemma Terms of Use found at <a href='https://ai.google.dev/gemma/terms'>ai.google.dev/gemma/terms</a>. You must not use any of the Gemma Services for the restricted uses set forth in the Gemma Prohibited Use Policy at <a href='https://ai.google.dev/gemma/prohibited_use_policy'>ai.google.dev/gemma/prohibited_use_policy</a>, or in violation of applicable laws and regulations.
     </string>

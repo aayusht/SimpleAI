@@ -1,5 +1,6 @@
 package com.aayush.simpleai.llm
 
+import com.aayush.simpleai.llm.Message.Content
 import com.aayush.simpleai.util.EnginePtr
 import com.aayush.simpleai.util.NativeInputData
 import com.aayush.simpleai.util.NativeStreamCallback
@@ -131,9 +132,9 @@ class Conversation internal constructor(
             toolRegistry = toolRegistry,
             messages = messages
         )
-        if (prompt.isNotBlank()) {
+        if (prompt.text.isNotBlank()) {
             val session = sessionPtr ?: error("Session is not initialized.")
-            nativeSessionRunPrefill(session, arrayOf(NativeInputData(text = prompt)))
+            nativeSessionRunPrefill(session, prompt.nativeInputs)
             _history.update { it + messages }
             prefilled = true
         }
@@ -177,7 +178,7 @@ class Conversation internal constructor(
         )
     }
 
-    private fun buildPromptForStream(message: Message): String {
+    private fun buildPromptForStream(message: Message): Prompt {
         val prompt = if (!prefilled) {
             val messages = _history.value + message
             renderFullPrompt(
@@ -193,7 +194,7 @@ class Conversation internal constructor(
     }
 
     private suspend fun streamDecode(
-        prompt: String,
+        prompt: Prompt,
         onToken: (String) -> Unit
     ): StreamResult {
         val session = sessionPtr ?: error("Session is not initialized.")
@@ -203,7 +204,7 @@ class Conversation internal constructor(
             val toolFenceFilter = ToolFenceFilter()
             val result = nativeSessionGenerateContentStream(
                 session = session,
-                inputs = arrayOf(NativeInputData(text = prompt)),
+                inputs = prompt.nativeInputs,
                 callback = object : NativeStreamCallback {
                     override fun onChunk(chunk: String) {
                         fullBuffer.append(chunk)
@@ -243,7 +244,7 @@ class Conversation internal constructor(
     ) {
         val generatingMessage = _generatingMessage.value ?: Message.assistant(isLoading = true)
         val newMessage = generatingMessage.copy(
-            fullText = fullText,
+            fullText = Content.Text(fullText),
             visibleText = visibleText,
             isLoading = visibleText.isBlank(),
         )
@@ -254,8 +255,12 @@ class Conversation internal constructor(
         fullText: String,
         toolCalls: List<ToolCall>,
     ) {
-        val generatingMessage = _generatingMessage.value ?: return
-        val newMessage = generatingMessage.copy(fullText = fullText, isLoading = false)
+        val oldMessage = _generatingMessage.value ?: return
+        val newMessage = oldMessage.copy(
+            fullText = Content.Text(fullText),
+            isLoading = false,
+            toolCalls = toolCalls,
+        )
         _generatingMessage.value = null
         _history.update { it + newMessage }
     }

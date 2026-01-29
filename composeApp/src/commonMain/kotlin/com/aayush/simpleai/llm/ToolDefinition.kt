@@ -2,22 +2,22 @@ package com.aayush.simpleai.llm
 
 import com.aayush.simpleai.util.EnginePtr
 
-sealed class ToolParamType<T>(val jsonType: String, val pyExample: String) {
+sealed class ToolParamType<T>(val pyType: String, val pyExample: String) {
     abstract fun extract(value: Any?): T?
 
-    data object STRING : ToolParamType<String>(jsonType = "string", pyExample = "'string value'") {
+    data object STRING : ToolParamType<String>(pyType = "str", pyExample = "'string value'") {
         override fun extract(value: Any?): String? = value as? String
     }
 
-    data object INTEGER : ToolParamType<Int>(jsonType = "integer", pyExample = "42") {
+    data object INTEGER : ToolParamType<Int>(pyType = "int", pyExample = "42") {
         override fun extract(value: Any?): Int? = (value as? Number)?.toInt()
     }
 
-    data object NUMBER : ToolParamType<Double>(jsonType = "number", pyExample = "6.7") {
+    data object NUMBER : ToolParamType<Double>(pyType = "float", pyExample = "6.7") {
         override fun extract(value: Any?): Double? = (value as? Number)?.toDouble()
     }
 
-    data object BOOLEAN : ToolParamType<Boolean>(jsonType = "boolean", pyExample = "True") {
+    data object BOOLEAN : ToolParamType<Boolean>(pyType = "bool", pyExample = "True") {
         override fun extract(value: Any?): Boolean? = value as? Boolean
     }
 
@@ -65,8 +65,29 @@ sealed class ToolDefinition(
 ) {
     open val parameters: List<ToolParameter<*>> = emptyList()
 
-    val pyArgsString: String
-        get() = parameters.joinToString(separator = ", ") { "${it.name}: ${it.type.jsonType}" }
+    val pythonDocString: String
+        get() = buildString {
+
+            // Function signature: def name(param1: type, param2: type) -> dict:
+            append("def ${name}(")
+            append(parameters.joinToString(separator = ", ") { "${it.name}: ${it.type.pyType}"})
+            append(") -> dict:\n")
+
+            // Docstring
+            append("    \"\"\"${description.trim()}")
+
+            // Args section (if there are parameters with descriptions)
+            val paramsWithDesc = parameters.filter { it.description.isNotBlank() }
+            if (paramsWithDesc.isNotEmpty()) {
+                append("\n\n    Args:\n")
+                for (param in paramsWithDesc) {
+                    append("        ${param.name}: ${param.description.trim()}\n")
+                }
+                append("    ")
+            }
+
+            append("\"\"\"\n    ...")
+        }
 
 
     abstract suspend fun handle(args: Map<String, Any?>, engine: EnginePtr): String

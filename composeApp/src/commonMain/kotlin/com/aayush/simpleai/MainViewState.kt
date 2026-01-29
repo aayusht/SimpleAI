@@ -102,7 +102,7 @@ data class MainViewState(
             "${float.toInt()}.${(float * 10).toInt() % 10}"
 
         private val Message.isToolCallsOnly: Boolean
-            get() = visibleText.isBlank() && fullText.isNotBlank()
+            get() = visibleText.isBlank() && fullText.text.isNotBlank()
 
 
         fun getMessageViewStates(messages: List<Message>): List<MessageViewState> {
