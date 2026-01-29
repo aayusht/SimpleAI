@@ -6,6 +6,12 @@
 	<true/>
 	<key>NSMotionUsageDescription</key>
 	<string>This app uses motion data to animate the download progress visualization.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera to capture photos for chat messages.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app uses the microphone to record audio messages.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app accesses your photo library to attach images to chat messages.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

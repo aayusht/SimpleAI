@@ -75,6 +75,9 @@ kotlin {
             implementation(files("./libs/litertlm-android-modified.aar"))
             implementation(kotlin("reflect"))  // Required by AAR's ToolManager for runtime reflection
             implementation(libs.androidx.room.sqlite.wrapper)
+            implementation(libs.camera.camera2)
+            implementation(libs.camera.lifecycle)
+            implementation(libs.camera.view)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -100,6 +103,12 @@ kotlin {
             implementation(libs.androidx.room.runtime)
             implementation(libs.androidx.sqlite.bundled)
             implementation(libs.kotlinx.serialization.json)
+            
+            // Media libraries
+            implementation(libs.peekaboo.ui)
+            implementation(libs.peekaboo.image.picker)
+            implementation(libs.kmp.record)
+            implementation(libs.gadulka)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)

@@ -16,6 +16,8 @@ import kotlinx.cinterop.*
 import litert.lm.c.*
 import platform.Foundation.NSLock
 
+actual fun supportsMediaInSession(): Boolean = true
+
 // ============================================================================
 // Pointer Types - iOS implementations (CPointer wrappers)
 // ============================================================================

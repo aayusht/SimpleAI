@@ -15,6 +15,7 @@ data class MainViewState(
     val notEnoughMemory: NotEnoughBytes?,
     val historyRows: List<HistoryRowState> = emptyList(),
     val isNewChat: Boolean = true,
+    val chatOptions: ChatHistory.Options = ChatHistory.Options(),
 ) {
 
     @Immutable
@@ -80,6 +81,8 @@ data class MainViewState(
         val markdownContent: String,
         val isEndAligned: Boolean,
         val usePrimaryBackground: Boolean,
+        val imageContent: List<ByteArray> = emptyList(),
+        val audioContent: List<ByteArray> = emptyList(),
     ) {
 
         constructor(
@@ -87,12 +90,16 @@ data class MainViewState(
             role: Role,
             content: String,
             isLoading: Boolean,
+            imageContent: List<ByteArray> = emptyList(),
+            audioContent: List<ByteArray> = emptyList(),
         ) : this(
             key = "$id${role.name}",
             isLoading = isLoading,
             markdownContent = content.trimEnd(),
             usePrimaryBackground = role == Role.USER,
             isEndAligned = role == Role.USER,
+            imageContent = imageContent,
+            audioContent = audioContent,
         )
     }
 
@@ -135,6 +142,8 @@ data class MainViewState(
                         content = dataStateMessage.visibleText.trim(),
                         // TODO have some "Searching" tools message or something
                         isLoading = dataStateMessage.isLoading || dataStateMessage.isToolCallsOnly,
+                        imageContent = dataStateMessage.imageContent.map { it.bytes },
+                        audioContent = dataStateMessage.audioContent.map { it.bytes },
                     )
                 }
         }

@@ -4,12 +4,14 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.aayush.simpleai.llm.Message
 import com.aayush.simpleai.llm.Role
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @Entity
 data class ChatHistory(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val messages: List<Message>,
+    val options: Options = Options(),
     val timestamp: Long = 0,
 ) {
     /**
@@ -26,10 +28,6 @@ data class ChatHistory(
     }
 
     companion object {
-        fun from(messages: List<Message>): ChatHistory {
-            val timestamp = messages.firstOrNull()?.timestamp ?: 0L
-            return ChatHistory(messages = messages, timestamp = timestamp)
-        }
 
         /**
          * Encodes messages to JSON string for use with the DAO update method.
@@ -38,4 +36,10 @@ data class ChatHistory(
             return Json.encodeToString(messages)
         }
     }
+
+    @Serializable
+    data class Options(
+        val mediaEnabled: Boolean = false,
+        val searchEnabled: Boolean = true,
+    )
 }

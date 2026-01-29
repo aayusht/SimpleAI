@@ -1,6 +1,7 @@
 *.iml
 .gradle
 .kotlin
+.cursor
 /local.properties
 /.idea
 /.idea/caches
