@@ -21,8 +21,8 @@ enum class Backend(val value: String) {
 data class EngineConfig(
     val modelPath: String,
     val backend: String = Backend.GPU.value,
-    val visionBackend: String = Backend.GPU.value,
-    val audioBackend: String = Backend.CPU.value,
+    val visionBackend: String? = null,
+    val audioBackend: String? = null,
     val maxNumTokens: Int = 32768,
     val cacheDir: String? = null,
     val enableBenchmark: Boolean = false
@@ -41,13 +41,8 @@ data class ConversationConfig(
     val systemPrompt: String? = null,
     val tools: List<ToolDefinition> = emptyList(),
     val prefillMessages: List<Message> = emptyList(),
-    val maxOutputTokens: Int? = null,
-    val implementationType: ImplementationType = ImplementationType.SESSION_BASED,
-) {
-    enum class ImplementationType {
-        SESSION_BASED, CONVERSATION_BASED
-    }
-}
+    val maxOutputTokens: Int? = null
+)
 
 class Engine(private val config: EngineConfig) : AutoCloseable {
     private val lock = PlatformLock()
@@ -82,16 +77,7 @@ class Engine(private val config: EngineConfig) : AutoCloseable {
     fun createConversation(config: ConversationConfig = ConversationConfig()): Conversation {
         lock.withLock {
             val engine = enginePtr ?: error("Engine is not initialized.")
-            return when (config.implementationType) {
-                ConversationConfig.ImplementationType.SESSION_BASED -> SessionBasedConversation(
-                    engine = engine,
-                    config = config
-                )
-                ConversationConfig.ImplementationType.CONVERSATION_BASED -> ConversationBasedConversation(
-                    engine = engine,
-                    config = config
-                )
-            }
+            return Conversation(engine, config)
         }
     }
 

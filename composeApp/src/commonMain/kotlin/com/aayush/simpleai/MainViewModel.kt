@@ -10,10 +10,8 @@ import com.aayush.simpleai.llm.ConversationConfig
 import com.aayush.simpleai.llm.Engine
 import com.aayush.simpleai.llm.EngineConfig
 import com.aayush.simpleai.llm.Message
-import com.aayush.simpleai.llm.Prompt
 import com.aayush.simpleai.llm.Role
 import com.aayush.simpleai.llm.SamplerConfig
-import com.aayush.simpleai.llm.SessionBasedConversation
 import com.aayush.simpleai.llm.ToolDefinition
 import com.aayush.simpleai.util.BackgroundDownloadService
 import com.aayush.simpleai.util.DOWNLOAD_URL
@@ -57,7 +55,6 @@ private data class MainDataState(
     val deviceStats: DeviceStats? = null,
     val activeChatId: Long? = null,
     val chatHistoryMap: Map<Long, ChatHistory> = emptyMap(),
-    val chatOptions: ChatHistory.Options = ChatHistory.Options(),
 ) {
 
     val chatHistoryList: List<ChatHistory>
@@ -79,9 +76,7 @@ class MainViewModel(
             field = value
             if (value != null) {
                 observeConversation(value)
-                if (value is SessionBasedConversation) {
-                    observeCompletedMessagesForDb(value)
-                }
+                observeCompletedMessagesForDb(value)
             }
         }
     
@@ -113,7 +108,6 @@ class MainViewModel(
                 MainViewState.HistoryRowState.from(chatHistory, dataState.activeChatId)
             },
             isNewChat = dataState.activeChatId == null,
-            chatOptions = dataState.chatOptions,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -139,7 +133,7 @@ class MainViewModel(
 
     private fun observeConversation(conversation: Conversation) {
         viewModelScope.launch {
-            conversation.messages.collect { messages ->
+            conversation.history.collect { messages ->
                 _dataState.update { it.copy(messages = messages) }
             }
         }
@@ -154,7 +148,7 @@ class MainViewModel(
      * Observes completed messages from the conversation and streams them to Room DB.
      * Only saves after the first assistant message is sent (to avoid saving empty chats).
      */
-    private fun observeCompletedMessagesForDb(conversation: SessionBasedConversation) {
+    private fun observeCompletedMessagesForDb(conversation: Conversation) {
         completedMessagesObserverJob?.cancel()
         completedMessagesObserverJob = viewModelScope.launch(Dispatchers.IO) {
             conversation.completedMessagesHistory.collect { messages ->
@@ -179,11 +173,7 @@ class MainViewModel(
             )
         } else {
             // Create new chat
-            val chatHistory = ChatHistory(
-                options = _dataState.value.chatOptions,
-                messages = messages,
-                timestamp = messages.firstOrNull()?.timestamp ?: 0L
-            )
+            val chatHistory = ChatHistory.from(messages)
             val newId = chatHistoryDao.insert(chatHistory)
             _dataState.update { it.copy(activeChatId = newId) }
         }
@@ -206,11 +196,9 @@ class MainViewModel(
      */
     fun restoreChat(chatId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            (conversation as? SessionBasedConversation)?.let { conversation ->
-                val chatHistory = chatHistoryDao.getById(chatId) ?: return@launch
-                _dataState.update { it.copy(activeChatId = chatId) }
-                conversation.restoreHistory(chatHistory.messages)
-            }
+            val chatHistory = chatHistoryDao.getById(chatId) ?: return@launch
+            _dataState.update { it.copy(activeChatId = chatId) }
+            conversation?.restoreHistory(chatHistory.messages)
         }
     }
 
@@ -220,7 +208,19 @@ class MainViewModel(
     fun startNewChat() {
         viewModelScope.launch(Dispatchers.IO) {
             _dataState.update { it.copy(activeChatId = null, messages = emptyList()) }
-            conversation = engine?.createConversation(getConversationConfig())
+            // Reset the conversation by creating a new one with the same config
+            val currentEngine = engine ?: return@launch
+            val systemPrompt = Res.readBytes("files/system_prompt.md").decodeToString()
+            val conversationConfig = ConversationConfig(
+                samplerConfig = SamplerConfig(
+                    topK = 40,
+                    topP = 0.95,
+                    temperature = 1.0,
+                ),
+                systemPrompt = systemPrompt,
+                tools = listOf(ToolDefinition.WebSearchTool())
+            )
+            conversation = currentEngine.createConversation(conversationConfig)
         }
     }
 
@@ -305,21 +305,11 @@ class MainViewModel(
     fun cancelDownload() {
         backgroundDownloadService.cancelDownload()
     }
-
-    fun setChatOptions(options: ChatHistory.Options): Boolean {
-        if (_dataState.value.activeChatId != null) return false
-        _dataState.update { it.copy(chatOptions = options) }
-        viewModelScope.launch {
-            engine?.let {
-                conversation = engine?.createConversation(getConversationConfig())
-            }
-        }
-        return true
-    }
     
     private fun initializeEngine(modelPath: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val backendsToTry = listOf(Backend.GPU, Backend.CPU)
+            val systemPrompt = Res.readBytes("files/system_prompt.md").decodeToString()
             
             for (backend in backendsToTry) {
                 try {
@@ -328,10 +318,19 @@ class MainViewModel(
                             modelPath = modelPath,
                             backend = backend.value
                         )
-                    ).apply {
-                        initialize()
-                        conversation = createConversation(getConversationConfig())
-                    }
+                    ).apply { initialize() }
+                    
+                    val conversationConfig = ConversationConfig(
+                        samplerConfig = SamplerConfig(
+                            topK = 40,
+                            topP = 0.95,
+                            temperature = 1.0,
+                        ),
+                        systemPrompt = systemPrompt,
+                        tools = listOf(ToolDefinition.WebSearchTool())
+                    )
+                    
+                    conversation = engine?.createConversation(conversationConfig)
                     return@launch
                 } catch (e: Exception) {
                     try {
@@ -348,42 +347,21 @@ class MainViewModel(
         }
     }
     
-    fun sendMessage(message: Message) {
-        if (message.fullText.text.isBlank()
-            && message.imageContent.isEmpty()
-            && message.audioContent.isEmpty()) return
+    fun sendMessage(prompt: String) {
+        if (prompt.isBlank()) return
         
         viewModelScope.launch(Dispatchers.IO) {
 
-            _dataState.update { it.copy(userMessageBeingGeneratedFor = message) }
+            _dataState.update { it.copy(userMessageBeingGeneratedFor = Message.user(prompt)) }
             _dataState.first { it.isConversationReady }
             conversation?.sendMessageAsync(
-                message = message,
+                prompt = prompt,
                 onToken = {},
                 onDone = { _dataState.update { it.copy(userMessageBeingGeneratedFor = null) } },
                 onError = { _dataState.update { it.copy(userMessageBeingGeneratedFor = null) } }
             )
         }
     }
-
-    private suspend fun getConversationConfig() = ConversationConfig(
-        samplerConfig = SamplerConfig(
-            topK = 40,
-            topP = 0.95,
-            temperature = 1.0,
-        ),
-        systemPrompt = Res.readBytes("files/system_prompt.md").decodeToString(),
-        tools = if (_dataState.value.chatOptions.searchEnabled) {
-            listOf(ToolDefinition.WebSearchTool())
-        } else {
-            emptyList()
-        },
-        implementationType = if (_dataState.value.chatOptions.mediaEnabled) {
-            ConversationConfig.ImplementationType.CONVERSATION_BASED
-        } else {
-            ConversationConfig.ImplementationType.SESSION_BASED
-        }
-    )
     
     override fun onCleared() {
         super.onCleared()

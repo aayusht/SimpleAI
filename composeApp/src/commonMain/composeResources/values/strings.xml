@@ -31,9 +31,4 @@
     <string name="not_enough_memory">Not enough memory. Have %1$s GB, need %2$s GB.</string>
     <string name="not_enough_storage">Not enough storage. Have %1$s GB, need %2$s GB.</string>
     <string name="not_enough_memory_and_storage">Not enough memory and storage. Have %1$sGB memory (need %2$s GB) and %3$s GB storage (need %4$s GB).</string>
-    <string name="media_alert_title">Media Chats</string>
-    <string name="media_alert_message">Chats with media (images/audio) cannot be saved to history and will be lost once you leave this screen.</string>
-    <string name="enable_media">Enable Media</string>
-    <string name="enable_search">Enable Search</string>
-    <string name="chat_options">Chat Options</string>
 </resources>

@@ -9,8 +9,6 @@ package com.aayush.simpleai.util
  * - iOS: C interop functions from LiteRtLm framework
  */
 
-expect fun supportsMediaInSession(): Boolean
-
 // ============================================================================
 // Pointer Types - Typed wrappers for native pointers
 // ============================================================================

@@ -7,8 +7,6 @@ import com.google.ai.edge.litertlm.InputData
 import com.google.ai.edge.litertlm.LiteRtLmJni
 import com.google.ai.edge.litertlm.SamplerConfig
 
-actual fun supportsMediaInSession(): Boolean = false
-
 // ============================================================================
 // Pointer Types - Android implementations (Long values or state holders)
 // ============================================================================

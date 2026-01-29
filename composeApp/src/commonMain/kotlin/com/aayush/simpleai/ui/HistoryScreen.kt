@@ -37,7 +37,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.aayush.simpleai.MainViewState
-import com.aayush.simpleai.db.ChatHistory
 import com.aayush.simpleai.ui.theme.AppTheme
 import com.aayush.simpleai.ui.theme.backgroundDark
 
@@ -286,8 +285,6 @@ fun HistoryScreenPreview() {
             onSelectChat = {},
             onNewChat = {},
             onDeleteChat = {},
-            chatOptions = ChatHistory.Options(),
-            onSetChatOptions = {},
         )
     }
 }

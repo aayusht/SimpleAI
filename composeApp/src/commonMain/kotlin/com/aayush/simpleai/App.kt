@@ -87,12 +87,10 @@ fun App() {
                     isGenerating = viewState.isGenerating,
                     historyRows = viewState.historyRows,
                     isNewChat = viewState.isNewChat,
-                    chatOptions = viewState.chatOptions,
-                    onSendMessage = { viewModel.sendMessage(message = it) },
+                    onSendMessage = { viewModel.sendMessage(prompt = it) },
                     onSelectChat = { viewModel.restoreChat(chatId = it) },
                     onNewChat = { viewModel.startNewChat() },
                     onDeleteChat = { viewModel.deleteChat(chatId = it) },
-                    onSetChatOptions = { viewModel.setChatOptions(it) },
                 )
             }
         }

@@ -25,10 +25,4 @@ class Converters {
 
     @TypeConverter
     fun toMessageList(value: String): List<Message> = json.decodeFromString(value)
-
-    @TypeConverter
-    fun fromOptions(value: ChatHistory.Options): String = json.encodeToString(value)
-
-    @TypeConverter
-    fun toOptions(value: String): ChatHistory.Options = json.decodeFromString(value)
 }
