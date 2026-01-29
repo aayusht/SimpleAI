@@ -31,7 +31,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
@@ -44,19 +43,23 @@ import okio.Path
 import okio.Path.Companion.toPath
 import okio.SYSTEM
 import simpleai.composeapp.generated.resources.*
-import kotlin.time.Clock
+import kotlin.collections.get
 
 internal typealias ChatMessage = Message
 
 private data class MainDataState(
     val downloadState: DownloadState = DownloadState.LoadingFile,
-    val isEngineReady: Boolean = false,
+    val isConversationReady: Boolean = false,
     val messages: List<ChatMessage> = emptyList(),
-    val isGenerating: Boolean = false,
+    val userMessageBeingGeneratedFor: Message? = null,
     val deviceStats: DeviceStats? = null,
     val activeChatId: Long? = null,
-    val chatHistoryList: List<ChatHistory> = emptyList(),
-)
+    val chatHistoryMap: Map<Long, ChatHistory> = emptyMap(),
+) {
+
+    val chatHistoryList: List<ChatHistory>
+        get() = chatHistoryMap.values.toList()
+}
 
 class MainViewModel(
     private val downloadProvider: DownloadProvider,
@@ -72,7 +75,7 @@ class MainViewModel(
             field?.close()
             field = value
             if (value != null) {
-                observeConversationMessages(value)
+                observeConversation(value)
                 observeCompletedMessagesForDb(value)
             }
         }
@@ -85,9 +88,13 @@ class MainViewModel(
         
         MainViewState(
             downloadState = dataState.downloadState,
-            isEngineReady = dataState.isEngineReady,
-            messages = MainViewState.getMessageViewStates(dataState.messages),
-            isGenerating = dataState.isGenerating,
+            messages = MainViewState.getMessageViewStates(
+                messages = dataState.messages,
+                dbMessages = dataState.chatHistoryMap[dataState.activeChatId]?.messages,
+                userMessageBeingGeneratedFor = dataState.userMessageBeingGeneratedFor,
+                isEngineReady = dataState.isConversationReady,
+            ),
+            isGenerating = dataState.userMessageBeingGeneratedFor != null,
             remainingStorage = dataState.deviceStats?.availableStorage,
             notEnoughMemory = dataState.deviceStats?.maxMemory?.let { actualBytes ->
                 MainViewState.NotEnoughBytes
@@ -106,8 +113,7 @@ class MainViewModel(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = MainViewState(
-            downloadState = DownloadState.NotStarted,
-            isEngineReady = false,
+            downloadState = DownloadState.LoadingFile,
             messages = emptyList(),
             isGenerating = false,
             remainingStorage = null,
@@ -125,10 +131,15 @@ class MainViewModel(
         observeChatHistoryList()
     }
 
-    private fun observeConversationMessages(conversation: Conversation) {
+    private fun observeConversation(conversation: Conversation) {
         viewModelScope.launch {
             conversation.history.collect { messages ->
                 _dataState.update { it.copy(messages = messages) }
+            }
+        }
+        viewModelScope.launch {
+            conversation.isConversationReady.collect { isReady ->
+                _dataState.update { it.copy(isConversationReady = isReady) }
             }
         }
     }
@@ -173,7 +184,9 @@ class MainViewModel(
             chatHistoryDao.getAll()
                 .distinctUntilChanged()
                 .collect { historyList ->
-                    _dataState.update { it.copy(chatHistoryList = historyList) }
+                    _dataState.update { state ->
+                        state.copy(chatHistoryMap = historyList.associateBy { it.id })
+                    }
                 }
         }
     }
@@ -318,7 +331,6 @@ class MainViewModel(
                     )
                     
                     conversation = engine?.createConversation(conversationConfig)
-                    _dataState.update { it.copy(isEngineReady = true) }
                     return@launch
                 } catch (e: Exception) {
                     try {
@@ -340,13 +352,13 @@ class MainViewModel(
         
         viewModelScope.launch(Dispatchers.IO) {
 
-            _dataState.update { it.copy(isGenerating = true) }
-            _dataState.first { it.isEngineReady }
+            _dataState.update { it.copy(userMessageBeingGeneratedFor = Message.user(prompt)) }
+            _dataState.first { it.isConversationReady }
             conversation?.sendMessageAsync(
                 prompt = prompt,
                 onToken = {},
-                onDone = { _dataState.update { it.copy(isGenerating = false) } },
-                onError = { _dataState.update { it.copy(isGenerating = false) } }
+                onDone = { _dataState.update { it.copy(userMessageBeingGeneratedFor = null) } },
+                onError = { _dataState.update { it.copy(userMessageBeingGeneratedFor = null) } }
             )
         }
     }

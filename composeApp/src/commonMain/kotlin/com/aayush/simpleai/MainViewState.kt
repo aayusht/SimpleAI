@@ -8,7 +8,6 @@ import com.aayush.simpleai.util.DownloadState
 
 data class MainViewState(
     val downloadState: DownloadState,
-    val isEngineReady: Boolean,
     val messages: List<MessageViewState>,
     val isGenerating: Boolean,
     val remainingStorage: Long?,
@@ -105,11 +104,28 @@ data class MainViewState(
             get() = visibleText.isBlank() && fullText.text.isNotBlank()
 
 
-        fun getMessageViewStates(messages: List<Message>): List<MessageViewState> {
-            return messages
+        fun getMessageViewStates(
+            messages: List<Message>,
+            dbMessages: List<Message>?,
+            userMessageBeingGeneratedFor: Message?,
+            isEngineReady: Boolean,
+        ): List<MessageViewState> {
+            val messagesToShow = if (isEngineReady) {
+                messages
+            } else {
+                buildList {
+                    // it'll be null for a new chat
+                    if (dbMessages != null) addAll(dbMessages)
+                    if (userMessageBeingGeneratedFor != null) {
+                        add(userMessageBeingGeneratedFor)
+                        add(Message.assistant(isLoading = true))
+                    }
+                }
+            }
+            return messagesToShow
                 .filterIndexed { index, item ->
                     // TODO have some "called tools" message
-                    val isNotLast = index != messages.lastIndex
+                    val isNotLast = index != messagesToShow.lastIndex
                     item.role.isUserVisible && !(isNotLast && item.isToolCallsOnly)
                 }
                 .map { dataStateMessage ->

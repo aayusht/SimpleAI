@@ -2,7 +2,6 @@ package com.aayush.simpleai.llm
 
 import com.aayush.simpleai.llm.Message.Content
 import com.aayush.simpleai.util.EnginePtr
-import com.aayush.simpleai.util.NativeInputData
 import com.aayush.simpleai.util.NativeStreamCallback
 import com.aayush.simpleai.util.PlatformLock
 import com.aayush.simpleai.util.SessionPtr
@@ -40,6 +39,9 @@ class Conversation internal constructor(
     private val _history = MutableStateFlow<List<Message>>(listOf())
 
     private val _generatingMessage = MutableStateFlow<Message?>(null)
+
+    private val _isConversationReady = MutableStateFlow(false)
+
     private var sessionPtr: SessionPtr? = null
     private var prefilled = false
     private var isClosed = false
@@ -56,10 +58,15 @@ class Conversation internal constructor(
             }
         }
 
+    val isConversationReady: Flow<Boolean>
+        get() = _isConversationReady.asStateFlow()
+
     init {
         createSession()
         if (config.prefillMessages.isNotEmpty()) {
             prefillHistory(config.prefillMessages)
+        } else {
+            _isConversationReady.value = true
         }
     }
 
@@ -122,11 +129,15 @@ class Conversation internal constructor(
         sessionPtr = null
         _history.value = emptyList()
         prefilled = false
+        _isConversationReady.value = false
         createSession()
     }
 
     private fun prefillHistory(messages: List<Message>) {
-        if (messages.isEmpty()) return
+        if (messages.isEmpty()) {
+            _isConversationReady.value = true
+            return
+        }
         val prompt = renderFullPrompt(
             systemPrompt = config.systemPrompt,
             toolRegistry = toolRegistry,
@@ -138,6 +149,7 @@ class Conversation internal constructor(
             _history.update { it + messages }
             prefilled = true
         }
+        _isConversationReady.value = true
     }
 
     private suspend fun streamWithToolSupport(
@@ -190,6 +202,7 @@ class Conversation internal constructor(
             renderIncrementalPrompt(listOf(message))
         }
         prefilled = true
+        _isConversationReady.value = true
         return prompt
     }
 
