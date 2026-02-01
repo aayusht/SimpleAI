@@ -5,6 +5,7 @@ import com.aayush.simpleai.db.ChatHistory
 import com.aayush.simpleai.llm.Message
 import com.aayush.simpleai.llm.Role
 import com.aayush.simpleai.util.DownloadState
+import simpleai.composeapp.generated.resources.Res
 
 data class MainViewState(
     val downloadState: DownloadState,
@@ -94,6 +95,48 @@ data class MainViewState(
             usePrimaryBackground = role == Role.USER,
             isEndAligned = role == Role.USER,
         )
+    }
+
+    sealed interface SystemPrompt {
+
+        suspend fun getText(): String
+
+        object General : SystemPrompt {
+            override suspend fun getText() = getTextFromFile(filename = "general.md")
+        }
+
+        object Finance : SystemPrompt {
+            override suspend fun getText() = getTextFromFile(filename = "finance.md")
+        }
+
+        object Medical : SystemPrompt {
+            override suspend fun getText() = getTextFromFile(filename = "medical.md")
+        }
+
+        object Recipes : SystemPrompt {
+            override suspend fun getText() = getTextFromFile(filename = "recipes.md")
+        }
+
+        object Therapy : SystemPrompt {
+            override suspend fun getText() = getTextFromFile(filename = "therapy.md")
+        }
+
+        object Translation : SystemPrompt {
+            override suspend fun getText() = getTextFromFile(filename = "translation.md")
+        }
+
+        object Travel : SystemPrompt {
+            override suspend fun getText() = getTextFromFile(filename = "travel.md")
+        }
+
+        data class Custom(val text: String) : SystemPrompt {
+            override suspend fun getText() = text
+        }
+
+        companion object {
+            private suspend fun getTextFromFile(filename: String): String =
+                Res.readBytes("files/$filename").decodeToString()
+        }
     }
 
     companion object {

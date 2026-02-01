@@ -22,7 +22,7 @@ private suspend fun HttpClient.getHtml(url: String): String = get(url) {
     header("User-Agent", USER_AGENT)
 }.bodyAsText()
 
-internal suspend fun webSearch(query: String, engine: EnginePtr): String {
+internal suspend fun webSearch(query: String): String {
     try {
         val client = HttpClient()
 

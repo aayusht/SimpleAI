@@ -11,7 +11,9 @@
     <string name="preparing_download">Preparing download...</string>
     <string name="initializing_engine">Initializing engine with %1$s...</string>
     <string name="ready_engine">Ready! Engine initialized with %1$s</string>
+    <string name="send_field_placeholder">Message</string>
     <string name="send_button_description">Send</string>
+    <string name="options_button_description">Options</string>
     <string name="no_response">No response</string>
     <string name="loading">Loading...</string>
     <string name="welcome_title">Welcome to Simple AI</string>

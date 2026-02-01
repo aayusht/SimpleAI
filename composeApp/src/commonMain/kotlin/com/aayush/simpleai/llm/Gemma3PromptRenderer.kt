@@ -82,9 +82,13 @@ If and only if you need more info to answer the user, to execute a tool, output 
 print(default_api.web_search(query="example query"))
 ```
 You will receive a response from the tool, and then can answer the question accordingly after receiving context.
-Don't make tool calls if information isn't required! eg if they're just saying hi or thanking you or asking about very simple facts.
+Verify information with search tools when asked for info, but don't make tool calls if information isn't required!
+eg if they're just saying hi or thanking you or asking about very simple facts.
 I repeat, only use tool calls when the immediately prior user message needs factual context.
 It's likely that if you've already finished replying to a message, a tool call is not likely.
+
+Tools may return empty results or error messages, in which case just mention that the tools couldn't work.
+If the result was necessary to answer the question, just apologize. Don't make up info based on the results.
 
 Tools spec: ${tools.joinToString(separator = "\n\n") { it.pythonDocString }}
         """.trimIndent())

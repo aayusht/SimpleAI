@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 @Entity
 data class ChatHistory(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val additionalSystemPrompt: String = "",
     val messages: List<Message>,
     val timestamp: Long = 0,
 ) {
@@ -26,9 +27,13 @@ data class ChatHistory(
     }
 
     companion object {
-        fun from(messages: List<Message>): ChatHistory {
+        fun from(messages: List<Message>, additionalSystemPrompt: String = ""): ChatHistory {
             val timestamp = messages.firstOrNull()?.timestamp ?: 0L
-            return ChatHistory(messages = messages, timestamp = timestamp)
+            return ChatHistory(
+                additionalSystemPrompt = additionalSystemPrompt,
+                messages = messages,
+                timestamp = timestamp,
+            )
         }
 
         /**

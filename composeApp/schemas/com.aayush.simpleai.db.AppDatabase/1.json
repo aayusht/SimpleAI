@@ -2,16 +2,22 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "acae47773eb7dcc16f2f4236742ac993",
+    "identityHash": "9d4031d3d4287f89c814a95c60fb489a",
     "entities": [
       {
         "tableName": "ChatHistory",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `messages` TEXT NOT NULL, `timestamp` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `additionalSystemPrompt` TEXT NOT NULL, `messages` TEXT NOT NULL, `timestamp` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
             "columnName": "id",
             "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "additionalSystemPrompt",
+            "columnName": "additionalSystemPrompt",
+            "affinity": "TEXT",
             "notNull": true
           },
           {
@@ -37,7 +43,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'acae47773eb7dcc16f2f4236742ac993')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9d4031d3d4287f89c814a95c60fb489a')"
     ]
   }
 }

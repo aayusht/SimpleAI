@@ -208,19 +208,7 @@ class MainViewModel(
     fun startNewChat() {
         viewModelScope.launch(Dispatchers.IO) {
             _dataState.update { it.copy(activeChatId = null, messages = emptyList()) }
-            // Reset the conversation by creating a new one with the same config
-            val currentEngine = engine ?: return@launch
-            val systemPrompt = Res.readBytes("files/system_prompt.md").decodeToString()
-            val conversationConfig = ConversationConfig(
-                samplerConfig = SamplerConfig(
-                    topK = 40,
-                    topP = 0.95,
-                    temperature = 1.0,
-                ),
-                systemPrompt = systemPrompt,
-                tools = listOf(ToolDefinition.WebSearchTool())
-            )
-            conversation = currentEngine.createConversation(conversationConfig)
+            engine?.createConversation(getConversationConfig())
         }
     }
 
@@ -309,7 +297,6 @@ class MainViewModel(
     private fun initializeEngine(modelPath: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val backendsToTry = listOf(Backend.GPU, Backend.CPU)
-            val systemPrompt = Res.readBytes("files/system_prompt.md").decodeToString()
             
             for (backend in backendsToTry) {
                 try {
@@ -318,19 +305,10 @@ class MainViewModel(
                             modelPath = modelPath,
                             backend = backend.value
                         )
-                    ).apply { initialize() }
-                    
-                    val conversationConfig = ConversationConfig(
-                        samplerConfig = SamplerConfig(
-                            topK = 40,
-                            topP = 0.95,
-                            temperature = 1.0,
-                        ),
-                        systemPrompt = systemPrompt,
-                        tools = listOf(ToolDefinition.WebSearchTool())
-                    )
-                    
-                    conversation = engine?.createConversation(conversationConfig)
+                    ).apply {
+                        initialize()
+                        createConversation(getConversationConfig())
+                    }
                     return@launch
                 } catch (e: Exception) {
                     try {
@@ -362,6 +340,16 @@ class MainViewModel(
             )
         }
     }
+
+    suspend fun getConversationConfig() = ConversationConfig(
+        samplerConfig = SamplerConfig(
+            topK = 40,
+            topP = 0.95,
+            temperature = 1.0,
+        ),
+        systemPrompt = Res.readBytes("files/system_prompt.md").decodeToString(),
+        tools = listOf(ToolDefinition.WebSearchTool())
+    )
     
     override fun onCleared() {
         super.onCleared()

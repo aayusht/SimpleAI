@@ -90,14 +90,14 @@ sealed class ToolDefinition(
         }
 
 
-    abstract suspend fun handle(args: Map<String, Any?>, engine: EnginePtr): String
+    abstract suspend fun handle(args: Map<String, Any?>): String
 
     class WebSearchTool : ToolDefinition(
         name = "web_search",
         description = """
             Search for any needed information and receive a summary of results.
-            When referencing links, use the following format: 
-            [text to display](https://www.example.com)
+            It's possible much of the info is not relevant. Focus on the original user query, don't just summarize these results.
+            Try to use website names more often than using links. If you need to provide a link, use markdown.
             """.trim(),
     ) {
         private val queryParam = ToolParameter.Required(
@@ -108,9 +108,9 @@ sealed class ToolDefinition(
 
         override val parameters = listOf(queryParam)
 
-        override suspend fun handle(args: Map<String, Any?>, engine: EnginePtr): String {
+        override suspend fun handle(args: Map<String, Any?>): String {
             val query: String = queryParam.get(args)
-            return webSearch(query, engine)
+            return webSearch(query)
         }
     }
 }

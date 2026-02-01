@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Icon
@@ -73,7 +74,9 @@ import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.model.rememberMarkdownState
 import org.jetbrains.compose.resources.stringResource
 import simpleai.composeapp.generated.resources.Res
+import simpleai.composeapp.generated.resources.options_button_description
 import simpleai.composeapp.generated.resources.send_button_description
+import simpleai.composeapp.generated.resources.send_field_placeholder
 import simpleai.composeapp.generated.resources.welcome_title
 import kotlin.math.PI
 import kotlin.math.sin
@@ -231,12 +234,25 @@ fun ChatScreenContent(
                 value = inputText,
                 onValueChange = { inputText = it },
                 modifier = Modifier.weight(weight = 1f),
-                placeholder = { Text(text = "Message") },
-                enabled = !isGenerating,
+                placeholder = {
+                    Text(text = stringResource(resource = Res.string.send_field_placeholder))
+                },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { sendMessageAndClearInput() }),
                 shape = RoundedCornerShape(size = 24.dp),
-                singleLine = true
+                singleLine = false,
+                trailingIcon = {
+                    if (messages.isEmpty() && !isGenerating) {
+                        IconButton(onClick = sendMessageAndClearInput) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription =
+                                    stringResource(resource = Res.string.options_button_description),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                },
             )
             Spacer(modifier = Modifier.width(width = 8.dp))
             IconButton(
@@ -250,7 +266,7 @@ fun ChatScreenContent(
                     tint = if (inputText.isNotBlank() && !isGenerating)
                         MaterialTheme.colorScheme.primary
                     else
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
                 )
             }
         }

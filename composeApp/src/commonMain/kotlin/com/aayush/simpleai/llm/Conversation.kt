@@ -179,7 +179,7 @@ class Conversation internal constructor(
         val responses = toolCalls.map { toolCall ->
             ToolResponse(
                 name = toolCall.name,
-                response = toolRegistry.execute(toolCall.name, toolCall.arguments, engine)
+                response = toolRegistry.execute(toolCall.name, toolCall.arguments)
             )
         }
         val toolMessage = Message.toolResponses(responses)
