@@ -307,7 +307,7 @@ class MainViewModel(
                         )
                     ).apply {
                         initialize()
-                        createConversation(getConversationConfig())
+                        conversation = createConversation(getConversationConfig())
                     }
                     return@launch
                 } catch (e: Exception) {
